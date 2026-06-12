@@ -8,6 +8,8 @@ final class FloatingTranslationPanel: NSPanel {
     private var dismissTask: Task<Void, Never>?
     private var outsideClickMonitor: Any?
     private var cardModel: TranslationCardModel?
+    private let entryOffset: CGFloat = 10
+    private let transitionDuration: TimeInterval = 0.18
 
     init() {
         super.init(
@@ -79,10 +81,17 @@ final class FloatingTranslationPanel: NSPanel {
         )
 
         alphaValue = 0
+        let finalFrame = frame
+        setFrame(
+            finalFrame.offsetBy(dx: 0, dy: -entryOffset),
+            display: false
+        )
         orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.16
+            context.duration = transitionDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             animator().alphaValue = 1
+            animator().setFrame(finalFrame, display: true)
         }
 
     }
@@ -96,8 +105,10 @@ final class FloatingTranslationPanel: NSPanel {
         guard isVisible else { return }
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.16
+            context.duration = transitionDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             animator().alphaValue = 0
+            animator().setFrame(frame.offsetBy(dx: 0, dy: -entryOffset), display: true)
         }, completionHandler: { [weak self] in
             self?.orderOut(nil)
         })
