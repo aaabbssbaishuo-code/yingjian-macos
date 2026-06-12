@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 
 enum ScreenshotSelectionResult {
     case selected(CGRect, NSScreen)
@@ -10,56 +11,122 @@ enum ScreenshotSelectionResult {
 final class ScreenshotOverlayController {
     private var windows: [ScreenshotOverlayWindow] = []
     private var completion: ((ScreenshotSelectionResult) -> Void)?
-    private var escapeMonitor: Any?
+    private var eventTap: CFMachPort?
+    private var eventTapSource: CFRunLoopSource?
+    private let selectionState = ScreenshotOverlayState()
 
     func beginSelection(completion: @escaping (ScreenshotSelectionResult) -> Void) {
         finishWithoutCallback()
         self.completion = completion
-        escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return }
-            Task { @MainActor in
-                self?.complete(.cancelled)
-            }
-        }
 
         windows = NSScreen.screens.map { screen in
-            let window = ScreenshotOverlayWindow(screen: screen)
-            window.onSelection = { [weak self] localRect in
-                self?.completeSelection(localRect, from: window)
-            }
-            window.onCancel = { [weak self] in
-                self?.complete(.cancelled)
-            }
+            let window = ScreenshotOverlayWindow(screen: screen, selectionState: selectionState)
             return window
         }
 
+        installEventTap()
         NSCursor.crosshair.push()
-        let mouseLocation = NSEvent.mouseLocation
-        let targetWindow = windows.first {
-            $0.targetScreen.frame.contains(mouseLocation)
-        } ?? windows.first
-
-        windows
-            .filter { $0 !== targetWindow }
-            .forEach { $0.orderFrontRegardless() }
-        targetWindow?.orderFrontRegardless()
+        windows.forEach { $0.orderFrontRegardless() }
     }
 
-    private func completeSelection(_ localRect: CGRect, from window: ScreenshotOverlayWindow) {
-        let rect = localRect.standardized
+    private func installEventTap() {
+        let mask = CGEventMask(
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue) |
+            (1 << CGEventType.keyDown.rawValue)
+        )
+
+        let pointer = Unmanaged.passUnretained(self).toOpaque()
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: { _, type, event, userInfo in
+                guard let userInfo else { return Unmanaged.passUnretained(event) }
+                let controller = Unmanaged<ScreenshotOverlayController>
+                    .fromOpaque(userInfo)
+                    .takeUnretainedValue()
+
+                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    if let eventTap = controller.eventTap {
+                        CGEvent.tapEnable(tap: eventTap, enable: true)
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+
+                Task { @MainActor in
+                    controller.handleCapturedEvent(type: type, event: event)
+                }
+                return nil
+            },
+            userInfo: pointer
+        ) else {
+            ToastPresenter.show(message: "需要开启辅助功能或输入监控权限。")
+            return
+        }
+
+        eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        eventTapSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func handleCapturedEvent(type: CGEventType, event: CGEvent) {
+        switch type {
+        case .keyDown:
+            if event.getIntegerValueField(.keyboardEventKeycode) == 53 {
+                complete(.cancelled)
+            }
+        case .leftMouseDown:
+            startSelection(at: event.location)
+        case .leftMouseDragged:
+            updateSelection(at: event.location)
+        case .leftMouseUp:
+            finishSelection(at: event.location)
+        default:
+            break
+        }
+    }
+
+    private func startSelection(at point: CGPoint) {
+        guard let screen = screen(containing: point) else { return }
+        selectionState.begin(at: point, on: screen)
+        refreshWindows()
+    }
+
+    private func updateSelection(at point: CGPoint) {
+        guard selectionState.isSelecting else { return }
+        selectionState.update(at: point)
+        refreshWindows()
+    }
+
+    private func finishSelection(at point: CGPoint) {
+        guard selectionState.isSelecting else { return }
+        selectionState.update(at: point)
+
+        guard let screen = selectionState.activeScreen,
+              let rect = selectionState.selectionRect else {
+            complete(.cancelled)
+            return
+        }
 
         guard rect.width >= 8, rect.height >= 8 else {
             complete(.tooSmall)
             return
         }
 
-        let screenRect = CGRect(
-            x: window.frame.minX + rect.minX,
-            y: window.frame.minY + rect.minY,
-            width: rect.width,
-            height: rect.height
-        )
-        complete(.selected(screenRect, window.targetScreen))
+        complete(.selected(rect, screen))
+    }
+
+    private func screen(containing point: CGPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
+    }
+
+    private func refreshWindows() {
+        windows.forEach { $0.contentView?.needsDisplay = true }
     }
 
     private func complete(_ result: ScreenshotSelectionResult) {
@@ -72,10 +139,15 @@ final class ScreenshotOverlayController {
         if !windows.isEmpty {
             NSCursor.pop()
         }
-        if let escapeMonitor {
-            NSEvent.removeMonitor(escapeMonitor)
-            self.escapeMonitor = nil
+        if let eventTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapSource, .commonModes)
+            self.eventTapSource = nil
         }
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            self.eventTap = nil
+        }
+        selectionState.reset()
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         completion = nil
@@ -85,11 +157,11 @@ final class ScreenshotOverlayController {
 @MainActor
 final class ScreenshotOverlayWindow: NSPanel {
     let targetScreen: NSScreen
-    var onSelection: ((CGRect) -> Void)?
-    var onCancel: (() -> Void)?
+    private let selectionState: ScreenshotOverlayState
 
-    init(screen: NSScreen) {
+    init(screen: NSScreen, selectionState: ScreenshotOverlayState) {
         targetScreen = screen
+        self.selectionState = selectionState
         super.init(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -105,19 +177,10 @@ final class ScreenshotOverlayWindow: NSPanel {
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        ignoresMouseEvents = false
+        ignoresMouseEvents = true
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
-        contentView = ScreenshotSelectionView()
-
-        if let selectionView = contentView as? ScreenshotSelectionView {
-            selectionView.onSelection = { [weak self] rect in
-                self?.onSelection?(rect)
-            }
-            selectionView.onCancel = { [weak self] in
-                self?.onCancel?()
-            }
-        }
+        contentView = ScreenshotSelectionView(selectionState: selectionState, screen: screen)
     }
 
     override var canBecomeKey: Bool { false }
@@ -125,45 +188,19 @@ final class ScreenshotOverlayWindow: NSPanel {
 }
 
 @MainActor
-final class ScreenshotSelectionView: NSView {
-    var onSelection: ((CGRect) -> Void)?
-    var onCancel: (() -> Void)?
+private final class ScreenshotSelectionView: NSView {
+    private let selectionState: ScreenshotOverlayState
+    private let screen: NSScreen
 
-    private var startPoint: CGPoint?
-    private var currentPoint: CGPoint?
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
+    init(selectionState: ScreenshotOverlayState, screen: NSScreen) {
+        self.selectionState = selectionState
+        self.screen = screen
+        super.init(frame: .zero)
     }
 
-    override func mouseDown(with event: NSEvent) {
-        startPoint = convert(event.locationInWindow, from: nil)
-        currentPoint = startPoint
-        needsDisplay = true
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        currentPoint = convert(event.locationInWindow, from: nil)
-        needsDisplay = true
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        guard let startPoint else { return }
-        let endPoint = convert(event.locationInWindow, from: nil)
-        onSelection?(CGRect(
-            x: startPoint.x,
-            y: startPoint.y,
-            width: endPoint.x - startPoint.x,
-            height: endPoint.y - startPoint.y
-        ).standardized)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            onCancel?()
-        } else {
-            super.keyDown(with: event)
-        }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -172,7 +209,7 @@ final class ScreenshotSelectionView: NSView {
         NSColor.black.withAlphaComponent(0.26).setFill()
         bounds.fill()
 
-        guard let selectionRect else {
+        guard let selectionRect = selectionRect else {
             drawHint()
             return
         }
@@ -191,12 +228,15 @@ final class ScreenshotSelectionView: NSView {
     }
 
     private var selectionRect: CGRect? {
-        guard let startPoint, let currentPoint else { return nil }
+        guard selectionState.activeScreen === screen,
+              let selectionRect = selectionState.selectionRect else {
+            return nil
+        }
         return CGRect(
-            x: startPoint.x,
-            y: startPoint.y,
-            width: currentPoint.x - startPoint.x,
-            height: currentPoint.y - startPoint.y
+            x: selectionRect.minX - screen.frame.minX,
+            y: selectionRect.minY - screen.frame.minY,
+            width: selectionRect.width,
+            height: selectionRect.height
         ).standardized
     }
 
@@ -242,5 +282,42 @@ final class ScreenshotSelectionView: NSView {
             at: CGPoint(x: labelRect.minX + 6, y: labelRect.minY + 3),
             withAttributes: attributes
         )
+    }
+}
+
+@MainActor
+final class ScreenshotOverlayState {
+    private(set) var activeScreen: NSScreen?
+    private(set) var startPoint: CGPoint?
+    private(set) var currentPoint: CGPoint?
+
+    var isSelecting: Bool {
+        startPoint != nil && currentPoint != nil
+    }
+
+    var selectionRect: CGRect? {
+        guard let startPoint, let currentPoint else { return nil }
+        return CGRect(
+            x: startPoint.x,
+            y: startPoint.y,
+            width: currentPoint.x - startPoint.x,
+            height: currentPoint.y - startPoint.y
+        ).standardized
+    }
+
+    func begin(at point: CGPoint, on screen: NSScreen) {
+        activeScreen = screen
+        startPoint = point
+        currentPoint = point
+    }
+
+    func update(at point: CGPoint) {
+        currentPoint = point
+    }
+
+    func reset() {
+        activeScreen = nil
+        startPoint = nil
+        currentPoint = nil
     }
 }
