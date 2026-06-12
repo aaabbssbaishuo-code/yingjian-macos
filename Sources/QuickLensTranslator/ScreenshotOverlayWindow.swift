@@ -10,10 +10,17 @@ enum ScreenshotSelectionResult {
 final class ScreenshotOverlayController {
     private var windows: [ScreenshotOverlayWindow] = []
     private var completion: ((ScreenshotSelectionResult) -> Void)?
+    private var escapeMonitor: Any?
 
     func beginSelection(completion: @escaping (ScreenshotSelectionResult) -> Void) {
         finishWithoutCallback()
         self.completion = completion
+        escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            Task { @MainActor in
+                self?.complete(.cancelled)
+            }
+        }
 
         windows = NSScreen.screens.map { screen in
             let window = ScreenshotOverlayWindow(screen: screen)
@@ -35,8 +42,7 @@ final class ScreenshotOverlayController {
         windows
             .filter { $0 !== targetWindow }
             .forEach { $0.orderFrontRegardless() }
-        targetWindow?.makeKeyAndOrderFront(nil)
-        targetWindow?.makeFirstResponder(targetWindow?.contentView)
+        targetWindow?.orderFrontRegardless()
     }
 
     private func completeSelection(_ localRect: CGRect, from window: ScreenshotOverlayWindow) {
@@ -66,6 +72,10 @@ final class ScreenshotOverlayController {
         if !windows.isEmpty {
             NSCursor.pop()
         }
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
+        }
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         completion = nil
@@ -73,7 +83,7 @@ final class ScreenshotOverlayController {
 }
 
 @MainActor
-final class ScreenshotOverlayWindow: NSWindow {
+final class ScreenshotOverlayWindow: NSPanel {
     let targetScreen: NSScreen
     var onSelection: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
@@ -91,7 +101,9 @@ final class ScreenshotOverlayWindow: NSWindow {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
-        ignoresMouseEvents = false
+        hidesOnDeactivate = false
+        isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
@@ -106,17 +118,6 @@ final class ScreenshotOverlayWindow: NSWindow {
             }
         }
     }
-
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            onCancel?()
-        } else {
-            super.keyDown(with: event)
-        }
-    }
 }
 
 @MainActor
@@ -127,15 +128,8 @@ final class ScreenshotSelectionView: NSView {
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
 
-    override var acceptsFirstResponder: Bool { true }
-
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
     }
 
     override func mouseDown(with event: NSEvent) {
