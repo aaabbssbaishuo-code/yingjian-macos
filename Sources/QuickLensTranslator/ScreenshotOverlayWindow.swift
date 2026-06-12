@@ -92,7 +92,7 @@ final class ScreenshotOverlayWindow: NSPanel {
         targetScreen = screen
         super.init(
             contentRect: screen.frame,
-            styleMask: .borderless,
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -105,6 +105,7 @@ final class ScreenshotOverlayWindow: NSPanel {
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
         contentView = ScreenshotSelectionView()
@@ -118,6 +119,9 @@ final class ScreenshotOverlayWindow: NSPanel {
             }
         }
     }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }
 
 @MainActor
