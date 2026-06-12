@@ -6,6 +6,7 @@ import Translation
 final class FloatingTranslationPanel: NSPanel {
     private let speechService = SpeechService()
     private var dismissTask: Task<Void, Never>?
+    private var outsideClickMonitor: Any?
     private var cardModel: TranslationCardModel?
 
     init() {
@@ -31,6 +32,7 @@ final class FloatingTranslationPanel: NSPanel {
 
     func present(paragraphs: [String], near selection: CGRect, on screen: NSScreen) {
         dismissTask?.cancel()
+        installOutsideClickMonitor()
         let model = TranslationCardModel(paragraphs: paragraphs)
         cardModel = model
         speechService.onSpeakingChanged = { [weak model] isSpeaking in
@@ -87,6 +89,7 @@ final class FloatingTranslationPanel: NSPanel {
 
     func dismiss() {
         dismissTask?.cancel()
+        removeOutsideClickMonitor()
         speechService.stop()
         speechService.onSpeakingChanged = nil
         cardModel = nil
@@ -124,6 +127,25 @@ final class FloatingTranslationPanel: NSPanel {
             await MainActor.run {
                 self?.dismiss()
             }
+        }
+    }
+
+    private func installOutsideClickMonitor() {
+        removeOutsideClickMonitor()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            guard let self else { return }
+            let mouseLocation = NSEvent.mouseLocation
+            guard !self.frame.contains(mouseLocation) else { return }
+            Task { @MainActor in
+                self.dismiss()
+            }
+        }
+    }
+
+    private func removeOutsideClickMonitor() {
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+            self.outsideClickMonitor = nil
         }
     }
 }
