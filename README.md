@@ -31,11 +31,15 @@
 
 ```bash
 chmod +x Scripts/build-app.sh
+chmod +x Scripts/build-pkg.sh
 ./Scripts/build-app.sh release
-open .build/英见.app
+./Scripts/build-pkg.sh
+open .build/dist/英见-*.pkg
 ```
 
 也可以直接使用 Xcode 打开 `Package.swift`。
+
+如果你是普通用户，推荐直接下载 GitHub Releases 里的 `英见-版本号.pkg`，双击后一路继续即可安装到 `Applications`，不需要手动拖拽。
 
 首次截图时，需要在“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”中授予英见权限。
 
