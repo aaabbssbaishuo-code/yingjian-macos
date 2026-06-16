@@ -33,8 +33,12 @@ final class ScreenshotOverlayController {
             }
         }
 
+        NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
-        windows.forEach { $0.orderFrontRegardless() }
+        windows.forEach {
+            $0.setFrame($0.targetScreen.frame, display: true)
+            $0.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func complete(_ result: ScreenshotSelectionResult) {
@@ -98,18 +102,20 @@ final class ScreenshotOverlayWindow: NSPanel {
         hidesOnDeactivate = false
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
         let selectionView = ScreenshotSelectionView(selectionState: selectionState, screen: screen)
+        selectionView.frame = CGRect(origin: .zero, size: screen.frame.size)
+        selectionView.autoresizingMask = [.width, .height]
         selectionView.onSelection = { [weak self] rect in
             self?.onSelection?(rect)
         }
         contentView = selectionView
     }
 
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
