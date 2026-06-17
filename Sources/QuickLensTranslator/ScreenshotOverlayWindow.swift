@@ -9,7 +9,7 @@ enum ScreenshotSelectionResult {
 
 @MainActor
 final class ScreenshotOverlayController {
-    private var windows: [ScreenshotOverlayWindow] = []
+    private var window: ScreenshotOverlayWindow?
     private var completion: ((ScreenshotSelectionResult) -> Void)?
     private var escapeMonitor: Any?
     private let selectionState = ScreenshotOverlayState()
@@ -18,13 +18,15 @@ final class ScreenshotOverlayController {
         finishWithoutCallback()
         self.completion = completion
 
-        windows = NSScreen.screens.map { screen in
-            let window = ScreenshotOverlayWindow(screen: screen, selectionState: selectionState)
-            window.onSelection = { [weak self] localRect in
-                self?.completeSelection(localRect, from: window)
-            }
-            return window
+        let desktopFrame = Self.virtualDesktopFrame()
+        let overlayWindow = ScreenshotOverlayWindow(
+            desktopFrame: desktopFrame,
+            selectionState: selectionState
+        )
+        overlayWindow.onSelection = { [weak self] globalRect in
+            self?.completeSelection(globalRect)
         }
+        window = overlayWindow
 
         escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return }
@@ -35,10 +37,8 @@ final class ScreenshotOverlayController {
 
         NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
-        windows.forEach {
-            $0.setFrame($0.targetScreen.frame, display: true)
-            $0.makeKeyAndOrderFront(nil)
-        }
+        overlayWindow.orderFrontRegardless()
+        overlayWindow.makeKeyAndOrderFront(nil)
     }
 
     private func complete(_ result: ScreenshotSelectionResult) {
@@ -47,25 +47,31 @@ final class ScreenshotOverlayController {
         callback?(result)
     }
 
-    private func completeSelection(_ localRect: CGRect, from window: ScreenshotOverlayWindow) {
-        let rect = localRect.standardized
+    private func completeSelection(_ globalRect: CGRect) {
+        let rect = globalRect.standardized
 
         guard rect.width >= 8, rect.height >= 8 else {
             complete(.tooSmall)
             return
         }
 
+        let screen = selectionState.activeScreen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen else {
+            complete(.cancelled)
+            return
+        }
+
         let screenRect = CGRect(
-            x: window.frame.minX + rect.minX,
-            y: window.frame.minY + rect.minY,
+            x: rect.minX,
+            y: rect.minY,
             width: rect.width,
             height: rect.height
         )
-        complete(.selected(screenRect, window.targetScreen))
+        complete(.selected(screenRect, screen))
     }
 
     private func finishWithoutCallback() {
-        if !windows.isEmpty {
+        if window != nil {
             NSCursor.pop()
         }
         if let escapeMonitor {
@@ -73,23 +79,34 @@ final class ScreenshotOverlayController {
             self.escapeMonitor = nil
         }
         selectionState.reset()
-        windows.forEach { $0.orderOut(nil) }
-        windows.removeAll()
+        window?.orderOut(nil)
+        window = nil
         completion = nil
+    }
+
+    private static func virtualDesktopFrame() -> CGRect {
+        let screens = NSScreen.screens
+        guard let first = screens.first else {
+            return .zero
+        }
+
+        return screens.dropFirst().reduce(first.frame) { partial, screen in
+            partial.union(screen.frame)
+        }
     }
 }
 
 @MainActor
 final class ScreenshotOverlayWindow: NSPanel {
-    let targetScreen: NSScreen
     private let selectionState: ScreenshotOverlayState
+    private let desktopFrame: CGRect
     var onSelection: ((CGRect) -> Void)?
 
-    init(screen: NSScreen, selectionState: ScreenshotOverlayState) {
-        targetScreen = screen
+    init(desktopFrame: CGRect, selectionState: ScreenshotOverlayState) {
         self.selectionState = selectionState
+        self.desktopFrame = desktopFrame
         super.init(
-            contentRect: screen.frame,
+            contentRect: desktopFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -106,8 +123,12 @@ final class ScreenshotOverlayWindow: NSPanel {
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
-        let selectionView = ScreenshotSelectionView(selectionState: selectionState, screen: screen)
-        selectionView.frame = CGRect(origin: .zero, size: screen.frame.size)
+
+        let selectionView = ScreenshotSelectionView(
+            selectionState: selectionState,
+            desktopFrame: desktopFrame
+        )
+        selectionView.frame = CGRect(origin: .zero, size: desktopFrame.size)
         selectionView.autoresizingMask = [.width, .height]
         selectionView.onSelection = { [weak self] rect in
             self?.onSelection?(rect)
@@ -122,12 +143,12 @@ final class ScreenshotOverlayWindow: NSPanel {
 @MainActor
 private final class ScreenshotSelectionView: NSView {
     private let selectionState: ScreenshotOverlayState
-    private let screen: NSScreen
+    private let desktopFrame: CGRect
     var onSelection: ((CGRect) -> Void)?
 
-    init(selectionState: ScreenshotOverlayState, screen: NSScreen) {
+    init(selectionState: ScreenshotOverlayState, desktopFrame: CGRect) {
         self.selectionState = selectionState
-        self.screen = screen
+        self.desktopFrame = desktopFrame
         super.init(frame: .zero)
     }
 
@@ -141,20 +162,21 @@ private final class ScreenshotSelectionView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        selectionState.begin(at: point, on: screen)
+        let localPoint = convert(event.locationInWindow, from: nil)
+        let globalPoint = toGlobalPoint(localPoint)
+        selectionState.begin(at: globalPoint, on: screenContaining(globalPoint))
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        selectionState.update(at: point)
+        let localPoint = convert(event.locationInWindow, from: nil)
+        selectionState.update(at: toGlobalPoint(localPoint))
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        selectionState.update(at: point)
+        let localPoint = convert(event.locationInWindow, from: nil)
+        selectionState.update(at: toGlobalPoint(localPoint))
         needsDisplay = true
 
         guard let selectionRect = selectionState.selectionRect else { return }
@@ -186,16 +208,26 @@ private final class ScreenshotSelectionView: NSView {
     }
 
     private var selectionRect: CGRect? {
-        guard selectionState.activeScreen === screen,
-              let selectionRect = selectionState.selectionRect else {
+        guard let selectionRect = selectionState.selectionRect else {
             return nil
         }
         return CGRect(
-            x: selectionRect.minX - screen.frame.minX,
-            y: selectionRect.minY - screen.frame.minY,
+            x: selectionRect.minX - desktopFrame.minX,
+            y: selectionRect.minY - desktopFrame.minY,
             width: selectionRect.width,
             height: selectionRect.height
         ).standardized
+    }
+
+    private func toGlobalPoint(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x + desktopFrame.minX, y: point.y + desktopFrame.minY)
+    }
+
+    private func screenContaining(_ point: CGPoint) -> NSScreen {
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
+            return screen
+        }
+        return NSScreen.main ?? NSScreen.screens.first!
     }
 
     private func drawHint() {
