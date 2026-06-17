@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import QuartzCore
 
 enum ScreenshotSelectionResult {
     case selected(CGRect, NSScreen)
@@ -10,7 +9,7 @@ enum ScreenshotSelectionResult {
 
 @MainActor
 final class ScreenshotOverlayController {
-    private var window: ScreenshotOverlayWindow?
+    private var windows: [ScreenshotOverlayWindow] = []
     private var completion: ((ScreenshotSelectionResult) -> Void)?
     private var escapeMonitor: Any?
     private let selectionState = ScreenshotOverlayState()
@@ -19,15 +18,13 @@ final class ScreenshotOverlayController {
         finishWithoutCallback()
         self.completion = completion
 
-        let desktopFrame = Self.virtualDesktopFrame()
-        let overlayWindow = ScreenshotOverlayWindow(
-            desktopFrame: desktopFrame,
-            selectionState: selectionState
-        )
-        overlayWindow.onSelection = { [weak self] localRect in
-            self?.completeSelection(localRect)
+        windows = NSScreen.screens.map { screen in
+            let window = ScreenshotOverlayWindow(screen: screen, selectionState: selectionState)
+            window.onSelection = { [weak self] localRect in
+                self?.completeSelection(localRect, from: window)
+            }
+            return window
         }
-        window = overlayWindow
 
         escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return }
@@ -38,8 +35,10 @@ final class ScreenshotOverlayController {
 
         NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
-        overlayWindow.orderFrontRegardless()
-        overlayWindow.makeKeyAndOrderFront(nil)
+        windows.forEach {
+            $0.orderFrontRegardless()
+            $0.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func complete(_ result: ScreenshotSelectionResult) {
@@ -48,12 +47,7 @@ final class ScreenshotOverlayController {
         callback?(result)
     }
 
-    private func completeSelection(_ localRect: CGRect) {
-        guard let window else {
-            complete(.cancelled)
-            return
-        }
-
+    private func completeSelection(_ localRect: CGRect, from window: ScreenshotOverlayWindow) {
         let rect = localRect.standardized
 
         guard rect.width >= 8, rect.height >= 8 else {
@@ -61,21 +55,17 @@ final class ScreenshotOverlayController {
             return
         }
 
-        let screenRect = rect.offsetBy(dx: window.frame.minX, dy: window.frame.minY)
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: screenRect.midX, y: screenRect.midY)) })
-            ?? window.screen
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-        guard let screen else {
-            complete(.cancelled)
-            return
-        }
-
-        complete(.selected(screenRect, screen))
+        let screenRect = CGRect(
+            x: window.frame.minX + rect.minX,
+            y: window.frame.minY + rect.minY,
+            width: rect.width,
+            height: rect.height
+        )
+        complete(.selected(screenRect, window.targetScreen))
     }
 
     private func finishWithoutCallback() {
-        if window != nil {
+        if !windows.isEmpty {
             NSCursor.pop()
         }
         if let escapeMonitor {
@@ -83,34 +73,23 @@ final class ScreenshotOverlayController {
             self.escapeMonitor = nil
         }
         selectionState.reset()
-        window?.orderOut(nil)
-        window = nil
+        windows.forEach { $0.orderOut(nil) }
+        windows.removeAll()
         completion = nil
-    }
-
-    private static func virtualDesktopFrame() -> CGRect {
-        let screens = NSScreen.screens
-        guard let first = screens.first else {
-            return .zero
-        }
-
-        return screens.dropFirst().reduce(first.frame) { partial, screen in
-            partial.union(screen.frame)
-        }
     }
 }
 
 @MainActor
 final class ScreenshotOverlayWindow: NSPanel {
+    let targetScreen: NSScreen
     private let selectionState: ScreenshotOverlayState
-    private let desktopFrame: CGRect
     var onSelection: ((CGRect) -> Void)?
 
-    init(desktopFrame: CGRect, selectionState: ScreenshotOverlayState) {
+    init(screen: NSScreen, selectionState: ScreenshotOverlayState) {
+        targetScreen = screen
         self.selectionState = selectionState
-        self.desktopFrame = desktopFrame
         super.init(
-            contentRect: desktopFrame,
+            contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -128,11 +107,8 @@ final class ScreenshotOverlayWindow: NSPanel {
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
 
-        let selectionView = ScreenshotSelectionView(
-            selectionState: selectionState,
-            desktopFrame: desktopFrame
-        )
-        selectionView.frame = CGRect(origin: .zero, size: desktopFrame.size)
+        let selectionView = ScreenshotSelectionView(selectionState: selectionState, screen: screen)
+        selectionView.frame = CGRect(origin: .zero, size: screen.frame.size)
         selectionView.autoresizingMask = [.width, .height]
         selectionView.onSelection = { [weak self] rect in
             self?.onSelection?(rect)
@@ -147,34 +123,13 @@ final class ScreenshotOverlayWindow: NSPanel {
 @MainActor
 private final class ScreenshotSelectionView: NSView {
     private let selectionState: ScreenshotOverlayState
-    private let desktopFrame: CGRect
-    private let selectionLayer = CAShapeLayer()
+    private let screen: NSScreen
     var onSelection: ((CGRect) -> Void)?
 
-    init(selectionState: ScreenshotOverlayState, desktopFrame: CGRect) {
+    init(selectionState: ScreenshotOverlayState, screen: NSScreen) {
         self.selectionState = selectionState
-        self.desktopFrame = desktopFrame
+        self.screen = screen
         super.init(frame: .zero)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.26).cgColor
-
-        if selectionLayer.superlayer == nil {
-            selectionLayer.fillColor = NSColor.systemBlue.withAlphaComponent(0.18).cgColor
-            selectionLayer.strokeColor = NSColor.white.cgColor
-            selectionLayer.lineWidth = 2.5
-            selectionLayer.shadowColor = NSColor.black.withAlphaComponent(0.35).cgColor
-            selectionLayer.shadowOpacity = 1
-            selectionLayer.shadowRadius = 8
-            selectionLayer.shadowOffset = CGSize(width: 0, height: 2)
-            layer?.addSublayer(selectionLayer)
-        }
-
-        refreshSelectionLayer()
     }
 
     @available(*, unavailable)
@@ -187,23 +142,20 @@ private final class ScreenshotSelectionView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let localPoint = convert(event.locationInWindow, from: nil)
-        selectionState.begin(at: localPoint)
-        refreshSelectionLayer()
+        let point = convert(event.locationInWindow, from: nil)
+        selectionState.begin(at: point, on: screen)
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let localPoint = convert(event.locationInWindow, from: nil)
-        selectionState.update(at: localPoint)
-        refreshSelectionLayer()
+        let point = convert(event.locationInWindow, from: nil)
+        selectionState.update(at: point)
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        let localPoint = convert(event.locationInWindow, from: nil)
-        selectionState.update(at: localPoint)
-        refreshSelectionLayer()
+        let point = convert(event.locationInWindow, from: nil)
+        selectionState.update(at: point)
         needsDisplay = true
 
         guard let selectionRect = selectionState.selectionRect else { return }
@@ -213,15 +165,33 @@ private final class ScreenshotSelectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        if selectionRect == nil {
-            NSColor.black.withAlphaComponent(0.26).setFill()
-            bounds.fill()
+        NSColor.black.withAlphaComponent(0.26).setFill()
+        bounds.fill()
+
+        guard let selectionRect = selectionRect else {
             drawHint()
+            return
         }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .clear
+        selectionRect.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        NSColor.controlAccentColor.setStroke()
+        let border = NSBezierPath(rect: selectionRect.insetBy(dx: 0.5, dy: 0.5))
+        border.lineWidth = 1.5
+        border.stroke()
+
+        drawSizeLabel(for: selectionRect)
     }
 
     private var selectionRect: CGRect? {
-        selectionState.selectionRect?.standardized
+        guard selectionState.activeScreen === screen,
+              let selectionRect = selectionState.selectionRect else {
+            return nil
+        }
+        return selectionRect.standardized
     }
 
     private func drawHint() {
@@ -246,25 +216,32 @@ private final class ScreenshotSelectionView: NSView {
         )
     }
 
-    private func refreshSelectionLayer() {
-        guard let selectionRect else {
-            selectionLayer.isHidden = true
-            return
-        }
+    private func drawSizeLabel(for rect: CGRect) {
+        let text = "\(Int(rect.width)) × \(Int(rect.height))"
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.white
+        ]
+        let size = text.size(withAttributes: attributes)
+        let labelRect = CGRect(
+            x: rect.minX,
+            y: max(6, rect.minY - size.height - 12),
+            width: size.width + 12,
+            height: size.height + 6
+        )
 
-        selectionLayer.isHidden = false
-        selectionLayer.frame = bounds
-        selectionLayer.path = CGPath(
-            roundedRect: selectionRect.insetBy(dx: 0.5, dy: 0.5),
-            cornerWidth: 6,
-            cornerHeight: 6,
-            transform: nil
+        NSColor.black.withAlphaComponent(0.62).setFill()
+        NSBezierPath(roundedRect: labelRect, xRadius: 5, yRadius: 5).fill()
+        text.draw(
+            at: CGPoint(x: labelRect.minX + 6, y: labelRect.minY + 3),
+            withAttributes: attributes
         )
     }
 }
 
 @MainActor
 final class ScreenshotOverlayState {
+    private(set) var activeScreen: NSScreen?
     private(set) var startPoint: CGPoint?
     private(set) var currentPoint: CGPoint?
 
@@ -282,7 +259,8 @@ final class ScreenshotOverlayState {
         ).standardized
     }
 
-    func begin(at point: CGPoint) {
+    func begin(at point: CGPoint, on screen: NSScreen) {
+        activeScreen = screen
         startPoint = point
         currentPoint = point
     }
@@ -292,6 +270,7 @@ final class ScreenshotOverlayState {
     }
 
     func reset() {
+        activeScreen = nil
         startPoint = nil
         currentPoint = nil
     }
