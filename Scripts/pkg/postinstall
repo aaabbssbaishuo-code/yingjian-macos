@@ -1,0 +1,16 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+APP_PATH="/Applications/英见.app"
+
+if [[ -d "$APP_PATH" ]]; then
+    CONSOLE_USER="$(stat -f %Su /dev/console)"
+    CONSOLE_UID="$(id -u "$CONSOLE_USER" 2>/dev/null || true)"
+
+    if [[ -n "${CONSOLE_UID:-}" && "$CONSOLE_USER" != "root" ]]; then
+        launchctl asuser "$CONSOLE_UID" /usr/bin/open -g -a "$APP_PATH" >/dev/null 2>&1 || true
+    fi
+fi
+
+exit 0
