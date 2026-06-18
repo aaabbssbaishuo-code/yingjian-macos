@@ -329,7 +329,7 @@ private struct TranslationCardView: View {
                 translationHeight = model.translations.enumerated().reduce(into: CGFloat(0)) { total, pair in
                     total += measuredTextHeight(
                         pair.element,
-                        font: .systemFont(ofSize: 15, weight: .semibold),
+                        font: .systemFont(ofSize: 14, weight: .semibold),
                         width: contentWidth
                     )
                     if pair.offset < model.translations.count - 1 {
@@ -466,7 +466,7 @@ private struct TranslationCardView: View {
                     } else {
                         ForEach(Array(model.translations.enumerated()), id: \.offset) { index, text in
                             Text(text)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
