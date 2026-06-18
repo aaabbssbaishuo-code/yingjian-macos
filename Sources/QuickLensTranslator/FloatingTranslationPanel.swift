@@ -8,8 +8,12 @@ final class FloatingTranslationPanel: NSPanel {
     private var dismissTask: Task<Void, Never>?
     private var outsideClickMonitor: Any?
     private var cardModel: TranslationCardModel?
+    private var hostingView: NSHostingView<AnyView>?
+    private var currentSelection: CGRect?
+    private var currentScreen: NSScreen?
     private let entryOffset: CGFloat = 10
     private let transitionDuration: TimeInterval = 0.18
+    private let panelWidth: CGFloat = 440
 
     init() {
         super.init(
@@ -41,12 +45,12 @@ final class FloatingTranslationPanel: NSPanel {
             model?.setSpeaking(isSpeaking)
         }
 
-        let panelSize = TranslationCardView.preferredSize(
-            paragraphCount: paragraphs.count
-        )
-        let rootView = TranslationCardView(
+        currentSelection = selection
+        currentScreen = screen
+
+        let rootView = AnyView(TranslationCardView(
             model: model,
-            panelSize: panelSize,
+            panelWidth: panelWidth,
             onSpeak: { [weak self] in
                 self?.toggleSpeech(model.fullEnglishText)
             },
@@ -63,22 +67,23 @@ final class FloatingTranslationPanel: NSPanel {
                 self?.handleHover(hovering)
             },
             onTranslationFinished: { [weak self] in
-                self?.scheduleDismiss()
+                guard let self else { return }
+                self.relayoutPanel(animated: true)
+                self.scheduleDismiss()
             }
-        )
+        ))
 
-        setContentSize(panelSize)
+        let panelSize = TranslationCardView.preferredSize(
+            model: model,
+            panelWidth: panelWidth,
+            visibleFrame: screen.visibleFrame
+        )
+        applyPanelSize(panelSize, selection: selection, screen: screen, animated: false)
+
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.frame = CGRect(origin: .zero, size: panelSize)
         contentView = hostingView
-
-        setFrameOrigin(
-            PanelPlacement.origin(
-                panelSize: panelSize,
-                selection: selection,
-                visibleFrame: screen.visibleFrame
-            )
-        )
+        self.hostingView = hostingView
 
         alphaValue = 0
         let finalFrame = frame
@@ -102,6 +107,9 @@ final class FloatingTranslationPanel: NSPanel {
         speechService.stop()
         speechService.onSpeakingChanged = nil
         cardModel = nil
+        hostingView = nil
+        currentSelection = nil
+        currentScreen = nil
         guard isVisible else { return }
 
         NSAnimationContext.runAnimationGroup({ context in
@@ -139,6 +147,47 @@ final class FloatingTranslationPanel: NSPanel {
                 self?.dismiss()
             }
         }
+    }
+
+    private func relayoutPanel(animated: Bool) {
+        guard let model = cardModel,
+              let selection = currentSelection,
+              let screen = currentScreen else {
+            return
+        }
+
+        let size = TranslationCardView.preferredSize(
+            model: model,
+            panelWidth: panelWidth,
+            visibleFrame: screen.visibleFrame
+        )
+        applyPanelSize(size, selection: selection, screen: screen, animated: animated)
+    }
+
+    private func applyPanelSize(
+        _ size: CGSize,
+        selection: CGRect,
+        screen: NSScreen,
+        animated: Bool
+    ) {
+        let origin = PanelPlacement.origin(
+            panelSize: size,
+            selection: selection,
+            visibleFrame: screen.visibleFrame
+        )
+
+        if animated, isVisible {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                animator().setFrame(CGRect(origin: origin, size: size), display: true)
+            }
+        } else {
+            setFrame(CGRect(origin: origin, size: size), display: true)
+        }
+
+        setContentSize(size)
+        hostingView?.frame = CGRect(origin: .zero, size: size)
     }
 
     private func installOutsideClickMonitor() {
@@ -241,7 +290,7 @@ private enum PanelPlacement {
 
 private struct TranslationCardView: View {
     @ObservedObject var model: TranslationCardModel
-    let panelSize: CGSize
+    let panelWidth: CGFloat
     let onSpeak: () -> Void
     let onCopy: () -> Void
     let onClose: () -> Void
@@ -250,21 +299,75 @@ private struct TranslationCardView: View {
 
     private let translationService = TranslationService()
 
-    static func preferredSize(paragraphCount: Int) -> CGSize {
-        let height: CGFloat
-        if paragraphCount <= 1 {
-            height = 176
-        } else {
-            height = min(460, 116 + CGFloat(paragraphCount) * 66)
+    static func preferredSize(
+        model: TranslationCardModel,
+        panelWidth: CGFloat,
+        visibleFrame: CGRect
+    ) -> CGSize {
+        let width = panelWidth
+        let contentWidth = width - 32
+        let maxHeight = max(220, visibleFrame.height - 80)
+
+        let topArea: CGFloat = 30
+        let dividerArea: CGFloat = 1
+        let bottomArea: CGFloat = 28
+        let verticalPadding: CGFloat = 32
+        let spacing: CGFloat = 10
+
+        let translationHeight: CGFloat
+        switch model.state {
+        case .translating:
+            translationHeight = 28
+        case .translated, .failed:
+            if model.translations.count <= 1 {
+                translationHeight = measuredTextHeight(
+                    model.translations.first ?? "",
+                    font: .systemFont(ofSize: 17, weight: .semibold),
+                    width: contentWidth
+                )
+            } else {
+                translationHeight = model.translations.enumerated().reduce(into: CGFloat(0)) { total, pair in
+                    total += measuredTextHeight(
+                        pair.element,
+                        font: .systemFont(ofSize: 15, weight: .semibold),
+                        width: contentWidth
+                    )
+                    if pair.offset < model.translations.count - 1 {
+                        total += 1 + 20
+                    }
+                }
+            }
         }
-        return CGSize(width: 440, height: height)
+
+        let englishPreviewHeight: CGFloat
+        if model.paragraphs.count == 1 {
+            englishPreviewHeight = measuredTextHeight(
+                model.paragraphs.first ?? "",
+                font: .systemFont(ofSize: 13),
+                width: contentWidth
+            )
+        } else {
+            englishPreviewHeight = 0
+        }
+
+        let totalHeight = verticalPadding
+            + topArea
+            + translationHeight
+            + (englishPreviewHeight > 0 ? spacing + englishPreviewHeight : 0)
+            + spacing
+            + dividerArea
+            + spacing
+            + bottomArea
+
+        let height = min(max(totalHeight, 176), maxHeight)
+        return CGSize(width: width, height: height)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                translationContent
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            translationContent
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button(action: onClose) {
                     Image(systemName: "xmark")
@@ -278,7 +381,7 @@ private struct TranslationCardView: View {
                 Text(english)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -308,7 +411,7 @@ private struct TranslationCardView: View {
             }
         }
         .padding(16)
-        .frame(width: panelSize.width, height: panelSize.height)
+        .frame(width: panelWidth)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
@@ -347,22 +450,23 @@ private struct TranslationCardView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("正在翻译 \(model.paragraphs.count) 段英文…")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
         case .translated, .failed:
-            if model.translations.count <= 1 {
-                Text(model.translations.first ?? "")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(4)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if model.translations.count <= 1 {
+                        Text(model.translations.first ?? "")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
                         ForEach(Array(model.translations.enumerated()), id: \.offset) { index, text in
                             Text(text)
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -374,6 +478,7 @@ private struct TranslationCardView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -390,6 +495,17 @@ private struct TranslationCardView: View {
             return "Translation unavailable"
         }
     }
+}
+
+private func measuredTextHeight(_ text: String, font: NSFont, width: CGFloat) -> CGFloat {
+    guard !text.isEmpty else { return font.pointSize + 4 }
+
+    let rect = (text as NSString).boundingRect(
+        with: CGSize(width: width, height: .greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading],
+        attributes: [.font: font]
+    )
+    return ceil(rect.height)
 }
 
 private struct PanelIconButtonStyle: ButtonStyle {
