@@ -41,8 +41,8 @@ final class FloatingTranslationPanel: NSPanel {
         installOutsideClickMonitor()
         let model = TranslationCardModel(paragraphs: paragraphs)
         cardModel = model
-        speechService.onSpeakingChanged = { [weak model] isSpeaking in
-            model?.setSpeaking(isSpeaking)
+        speechService.onStateChanged = { [weak model] state in
+            model?.setSpeechState(state)
         }
 
         currentSelection = selection
@@ -52,7 +52,7 @@ final class FloatingTranslationPanel: NSPanel {
             model: model,
             panelWidth: panelWidth,
             onSpeak: { [weak self] in
-                self?.toggleSpeech(model.fullEnglishText)
+                self?.toggleSpeech(model.paragraphs)
             },
             onCopy: {
                 guard let chinese = model.translatedText else { return }
@@ -105,7 +105,7 @@ final class FloatingTranslationPanel: NSPanel {
         dismissTask?.cancel()
         removeOutsideClickMonitor()
         speechService.stop()
-        speechService.onSpeakingChanged = nil
+        speechService.onStateChanged = nil
         cardModel = nil
         hostingView = nil
         currentSelection = nil
@@ -122,10 +122,8 @@ final class FloatingTranslationPanel: NSPanel {
         })
     }
 
-    private func toggleSpeech(_ text: String) {
-        if speechService.isSpeaking {
-            speechService.stop()
-        } else if !speechService.speak(text) {
+    private func toggleSpeech(_ paragraphs: [String]) {
+        if !speechService.toggle(paragraphs: paragraphs) {
             ToastPresenter.show(message: "朗读失败，请稍后重试。")
         }
     }
@@ -221,7 +219,7 @@ private final class TranslationCardModel: ObservableObject {
     let paragraphs: [String]
     @Published private(set) var translations: [String] = []
     @Published private(set) var state = State.translating
-    @Published private(set) var isSpeaking = false
+    @Published private(set) var speechState = SpeechService.State.idle
 
     init(paragraphs: [String]) {
         self.paragraphs = paragraphs
@@ -247,8 +245,16 @@ private final class TranslationCardModel: ObservableObject {
         state = .failed
     }
 
-    func setSpeaking(_ isSpeaking: Bool) {
-        self.isSpeaking = isSpeaking
+    var isSpeaking: Bool {
+        speechState == .speaking
+    }
+
+    var isPaused: Bool {
+        speechState == .paused
+    }
+
+    func setSpeechState(_ speechState: SpeechService.State) {
+        self.speechState = speechState
     }
 }
 
@@ -391,10 +397,10 @@ private struct TranslationCardView: View {
                 Button {
                     onSpeak()
                 } label: {
-                    Image(systemName: model.isSpeaking ? "speaker.wave.2.fill" : "speaker.wave.2")
+                    Image(systemName: model.isPaused ? "play.fill" : (model.isSpeaking ? "pause.fill" : "speaker.wave.2"))
                 }
-                .buttonStyle(PanelIconButtonStyle(isActive: model.isSpeaking))
-                .help("朗读英文")
+                .buttonStyle(PanelIconButtonStyle(isActive: model.isSpeaking || model.isPaused))
+                .help(model.isPaused ? "继续朗读" : (model.isSpeaking ? "暂停朗读" : "朗读英文"))
 
                 Button(action: onCopy) {
                     Image(systemName: "doc.on.doc")
@@ -424,6 +430,7 @@ private struct TranslationCardView: View {
             target: TranslationService.targetLanguage
         ) { session in
             do {
+                try await session.prepareTranslation()
                 let translations = try await translationService.translateParagraphs(
                     model.paragraphs,
                     using: session
@@ -432,7 +439,24 @@ private struct TranslationCardView: View {
                     model.complete(with: translations)
                     onTranslationFinished()
                 }
+            } catch TranslationError.unsupportedSourceLanguage,
+                    TranslationError.unsupportedTargetLanguage,
+                    TranslationError.unsupportedLanguagePairing {
+                await MainActor.run {
+                    model.fail()
+                    ToastPresenter.show(message: "当前系统不支持这组翻译语言。")
+                    onTranslationFinished()
+                }
             } catch {
+                if isTranslationLanguagePackNotInstalled(error) {
+                    await MainActor.run {
+                        model.fail()
+                        ToastPresenter.show(message: "翻译语言包未就绪，请保持联网后重试。")
+                        onTranslationFinished()
+                    }
+                    return
+                }
+
                 await MainActor.run {
                     model.fail()
                     ToastPresenter.show(message: "翻译失败，请检查网络或语言包。")
@@ -440,6 +464,11 @@ private struct TranslationCardView: View {
                 }
             }
         }
+    }
+
+    private func isTranslationLanguagePackNotInstalled(_ error: Error) -> Bool {
+        guard #available(macOS 26.0, *) else { return false }
+        return TranslationError.notInstalled ~= error
     }
 
     @ViewBuilder

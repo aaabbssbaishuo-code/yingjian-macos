@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeyManager = HotKeyManager()
     private let captureCoordinator = CaptureCoordinator()
     private let loginItemService = LoginItemService()
+    private let launchGuideService = LaunchGuideService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loginItemService.enableByDefaultIfNeeded()
@@ -31,6 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 title: "快捷键注册失败",
                 message: "Command + Shift + T 已被其他应用占用，请退出冲突应用后重试。"
             )
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            await launchGuideService.runIfNeeded()
         }
     }
 

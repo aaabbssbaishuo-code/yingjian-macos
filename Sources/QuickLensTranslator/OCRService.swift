@@ -79,10 +79,11 @@ struct OCRService {
             let horizontalOverlap = min(previous.box.maxX, line.box.maxX)
                 - max(previous.box.minX, line.box.minX)
             let sharesColumn = horizontalOverlap > 0
-                || leftAlignment < max(previous.box.width, line.box.width) * 0.18
-            let isClose = verticalGap <= max(0.012, referenceHeight * 0.62)
+                || leftAlignment < max(previous.box.width, line.box.width) * 0.24
+            let isClose = verticalGap <= max(0.014, referenceHeight * 0.72)
+            let isBulletItem = Self.isBulletItem(line.text)
 
-            if sharesColumn && isClose {
+            if sharesColumn && isClose && !isBulletItem {
                 groups[groups.count - 1].append(line)
             } else {
                 groups.append([line])
@@ -94,5 +95,13 @@ struct OCRService {
                 group.map(\.text).joined(separator: " ")
             }
             .filter { !$0.isEmpty }
+    }
+
+    private static func isBulletItem(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.range(
+            of: #"^(?:[•·\-\u{2022}\u{2023}\u{25E6}]|\d+[.)])\s+"#,
+            options: .regularExpression
+        ) != nil
     }
 }

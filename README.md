@@ -32,14 +32,19 @@
 ```bash
 chmod +x Scripts/build-app.sh
 chmod +x Scripts/build-pkg.sh
+chmod +x Scripts/build-zip.sh
 ./Scripts/build-app.sh release
+./Scripts/build-zip.sh
 ./Scripts/build-pkg.sh
+open .build/dist/英见-*.zip
 open .build/dist/英见-*.pkg
 ```
 
 也可以直接使用 Xcode 打开 `Package.swift`。
 
-如果你是普通用户，推荐直接下载 GitHub Releases 里的 `英见-版本号.pkg`，双击后一路继续即可安装到 `Applications`，不需要手动拖拽。
+如果你是普通用户，推荐直接下载 GitHub Releases 里的 `英见-版本号.zip`。解压后会得到 `英见.app`，把它拖到“应用程序”文件夹即可。
+
+如果你更喜欢免拖拽安装，也可以下载 `英见-版本号.pkg`，双击后一路继续即可自动安装到 `Applications`。
 
 首次截图时，需要在“系统设置 → 隐私与安全性 → 屏幕与系统音频录制”中授予英见权限。
 
