@@ -9,6 +9,49 @@ enum ScreenCaptureError: Error {
 }
 
 struct ScreenCaptureService {
+    func captureDisplaySnapshots() async throws -> [CGDirectDisplayID: ScreenSnapshot] {
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: true
+            )
+        } catch {
+            throw ScreenCaptureError.permissionDenied
+        }
+
+        var snapshots: [CGDirectDisplayID: ScreenSnapshot] = [:]
+        for screen in NSScreen.screens {
+            guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                as? CGDirectDisplayID,
+                  let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                continue
+            }
+
+            let configuration = SCStreamConfiguration()
+            configuration.sourceRect = CGRect(
+                x: 0,
+                y: 0,
+                width: display.width,
+                height: display.height
+            )
+            configuration.width = display.width
+            configuration.height = display.height
+            configuration.showsCursor = false
+            configuration.capturesAudio = false
+            configuration.pixelFormat = kCVPixelFormatType_32BGRA
+
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let image = try await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: configuration
+            )
+            snapshots[displayID] = ScreenSnapshot(screen: screen, image: image)
+        }
+
+        return snapshots
+    }
+
     func capture(rect: CGRect, on screen: NSScreen) async throws -> CGImage {
         let content: SCShareableContent
         do {

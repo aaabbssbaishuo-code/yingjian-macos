@@ -2,7 +2,7 @@ import AppKit
 import CoreGraphics
 
 enum ScreenshotSelectionResult {
-    case selected(CGRect, NSScreen)
+    case selected(CGRect, NSScreen, CGImage?)
     case tooSmall
     case cancelled
 }
@@ -14,12 +14,22 @@ final class ScreenshotOverlayController {
     private var escapeMonitor: Any?
     private let selectionState = ScreenshotOverlayState()
 
-    func beginSelection(completion: @escaping (ScreenshotSelectionResult) -> Void) {
+    func beginSelection(
+        snapshots: [CGDirectDisplayID: ScreenSnapshot] = [:],
+        completion: @escaping (ScreenshotSelectionResult) -> Void
+    ) {
         finishWithoutCallback()
         self.completion = completion
 
         windows = NSScreen.screens.map { screen in
-            let window = ScreenshotOverlayWindow(screen: screen, selectionState: selectionState)
+            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                as? CGDirectDisplayID
+            let snapshot = displayID.flatMap { snapshots[$0] }
+            let window = ScreenshotOverlayWindow(
+                screen: screen,
+                selectionState: selectionState,
+                snapshot: snapshot
+            )
             window.onSelection = { [weak self] localRect in
                 self?.completeSelection(localRect, from: window)
             }
@@ -36,7 +46,6 @@ final class ScreenshotOverlayController {
         NSCursor.crosshair.push()
         windows.forEach {
             $0.orderFrontRegardless()
-            $0.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -60,7 +69,11 @@ final class ScreenshotOverlayController {
             width: rect.width,
             height: rect.height
         )
-        complete(.selected(screenRect, window.targetScreen))
+        complete(.selected(
+            screenRect,
+            window.targetScreen,
+            window.snapshot?.cropping(to: screenRect)
+        ))
     }
 
     private func finishWithoutCallback() {
@@ -81,11 +94,13 @@ final class ScreenshotOverlayController {
 @MainActor
 final class ScreenshotOverlayWindow: NSPanel {
     let targetScreen: NSScreen
+    let snapshot: ScreenSnapshot?
     private let selectionState: ScreenshotOverlayState
     var onSelection: ((CGRect) -> Void)?
 
-    init(screen: NSScreen, selectionState: ScreenshotOverlayState) {
+    init(screen: NSScreen, selectionState: ScreenshotOverlayState, snapshot: ScreenSnapshot?) {
         targetScreen = screen
+        self.snapshot = snapshot
         self.selectionState = selectionState
         super.init(
             contentRect: screen.frame,
@@ -100,13 +115,17 @@ final class ScreenshotOverlayWindow: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         isFloatingPanel = true
-        becomesKeyOnlyIfNeeded = false
+        becomesKeyOnlyIfNeeded = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
 
-        let selectionView = ScreenshotSelectionView(selectionState: selectionState, screen: screen)
+        let selectionView = ScreenshotSelectionView(
+            selectionState: selectionState,
+            screen: screen,
+            snapshotImage: snapshot?.image
+        )
         selectionView.frame = CGRect(origin: .zero, size: screen.frame.size)
         selectionView.autoresizingMask = [.width, .height]
         selectionView.onSelection = { [weak self] rect in
@@ -115,7 +134,7 @@ final class ScreenshotOverlayWindow: NSPanel {
         contentView = selectionView
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
@@ -123,11 +142,13 @@ final class ScreenshotOverlayWindow: NSPanel {
 private final class ScreenshotSelectionView: NSView {
     private let selectionState: ScreenshotOverlayState
     private let screen: NSScreen
+    private let snapshotImage: CGImage?
     var onSelection: ((CGRect) -> Void)?
 
-    init(selectionState: ScreenshotOverlayState, screen: NSScreen) {
+    init(selectionState: ScreenshotOverlayState, screen: NSScreen, snapshotImage: CGImage?) {
         self.selectionState = selectionState
         self.screen = screen
+        self.snapshotImage = snapshotImage
         super.init(frame: .zero)
     }
 
@@ -163,6 +184,10 @@ private final class ScreenshotSelectionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+
+        if let snapshotImage {
+            NSImage(cgImage: snapshotImage, size: bounds.size).draw(in: bounds)
+        }
 
         NSColor.black.withAlphaComponent(0.26).setFill()
         bounds.fill()
@@ -235,6 +260,23 @@ private final class ScreenshotSelectionView: NSView {
             at: CGPoint(x: labelRect.minX + 6, y: labelRect.minY + 3),
             withAttributes: attributes
         )
+    }
+}
+
+struct ScreenSnapshot {
+    let screen: NSScreen
+    let image: CGImage
+
+    func cropping(to rect: CGRect) -> CGImage? {
+        let scale = CGFloat(image.width) / screen.frame.width
+        let cropRect = CGRect(
+            x: (rect.minX - screen.frame.minX) * scale,
+            y: (screen.frame.maxY - rect.maxY) * scale,
+            width: rect.width * scale,
+            height: rect.height * scale
+        ).integral
+
+        return image.cropping(to: cropRect)
     }
 }
 

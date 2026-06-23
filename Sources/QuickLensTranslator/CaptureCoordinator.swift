@@ -15,29 +15,45 @@ final class CaptureCoordinator {
         isCapturing = true
         floatingPanel.dismiss()
 
-        overlayController.beginSelection { [weak self] result in
+        Task { [weak self] in
             guard let self else { return }
 
-            switch result {
-            case .cancelled:
-                self.isCapturing = false
-            case .tooSmall:
-                self.isCapturing = false
-                ToastPresenter.show(message: "选区过小，请重新选择。")
-            case .selected(let rect, let screen):
-                Task {
-                    await self.processSelection(rect, on: screen)
+            let snapshots: [CGDirectDisplayID: ScreenSnapshot]
+            do {
+                snapshots = try await screenCaptureService.captureDisplaySnapshots()
+            } catch {
+                snapshots = [:]
+            }
+
+            self.overlayController.beginSelection(snapshots: snapshots) { [weak self] result in
+                guard let self else { return }
+
+                switch result {
+                case .cancelled:
+                    self.isCapturing = false
+                case .tooSmall:
+                    self.isCapturing = false
+                    ToastPresenter.show(message: "选区过小，请重新选择。")
+                case .selected(let rect, let screen, let snapshotImage):
+                    Task {
+                        await self.processSelection(rect, on: screen, snapshotImage: snapshotImage)
+                    }
                 }
             }
         }
     }
 
-    private func processSelection(_ rect: CGRect, on screen: NSScreen) async {
+    private func processSelection(_ rect: CGRect, on screen: NSScreen, snapshotImage: CGImage?) async {
         defer { isCapturing = false }
 
         do {
             try await Task.sleep(for: .milliseconds(120))
-            let image = try await screenCaptureService.capture(rect: rect, on: screen)
+            let image: CGImage
+            if let snapshotImage {
+                image = snapshotImage
+            } else {
+                image = try await screenCaptureService.capture(rect: rect, on: screen)
+            }
             let result = try await ocrService.recognizeEnglish(in: image)
 
             guard !result.paragraphs.isEmpty else {
