@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         loginItemService.enableByDefaultIfNeeded()
+        captureCoordinator.startSnapshotCache()
 
         menuBarController = MenuBarController(
             loginItemService: loginItemService,
@@ -42,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         hotKeyManager.unregister()
+        captureCoordinator.stopSnapshotCache()
     }
 
     private func startCapture() {
