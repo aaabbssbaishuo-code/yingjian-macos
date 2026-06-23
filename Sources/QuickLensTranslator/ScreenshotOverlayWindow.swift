@@ -33,7 +33,6 @@ final class ScreenshotOverlayController {
             }
         }
 
-        NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.push()
         windows.forEach {
             $0.orderFrontRegardless()
