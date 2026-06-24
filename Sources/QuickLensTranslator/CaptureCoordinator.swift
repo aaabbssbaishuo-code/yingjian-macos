@@ -1,22 +1,14 @@
 import AppKit
+import CoreGraphics
 
 @MainActor
 final class CaptureCoordinator {
     private let overlayController = ScreenshotOverlayController()
     private let screenCaptureService = ScreenCaptureService()
-    private let snapshotCache = ScreenSnapshotCache()
     private let ocrService = OCRService()
     private let floatingPanel = FloatingTranslationPanel()
 
     private(set) var isCapturing = false
-
-    func startSnapshotCache() {
-        snapshotCache.start()
-    }
-
-    func stopSnapshotCache() {
-        snapshotCache.stop()
-    }
 
     func start() {
         guard !isCapturing else { return }
@@ -24,19 +16,29 @@ final class CaptureCoordinator {
         isCapturing = true
         floatingPanel.dismiss()
 
-        let snapshots = snapshotCache.snapshots()
-        overlayController.beginSelection(snapshots: snapshots) { [weak self] result in
+        Task { [weak self] in
             guard let self else { return }
 
-            switch result {
-            case .cancelled:
-                self.isCapturing = false
-            case .tooSmall:
-                self.isCapturing = false
-                ToastPresenter.show(message: "选区过小，请重新选择。")
-            case .selected(let rect, let screen, let snapshotImage):
-                Task {
-                    await self.processSelection(rect, on: screen, snapshotImage: snapshotImage)
+            let snapshots: [CGDirectDisplayID: ScreenSnapshot]
+            do {
+                snapshots = try await screenCaptureService.captureDisplaySnapshots()
+            } catch {
+                snapshots = [:]
+            }
+
+            self.overlayController.beginSelection(snapshots: snapshots) { [weak self] result in
+                guard let self else { return }
+
+                switch result {
+                case .cancelled:
+                    self.isCapturing = false
+                case .tooSmall:
+                    self.isCapturing = false
+                    ToastPresenter.show(message: "选区过小，请重新选择。")
+                case .selected(let rect, let screen, let snapshotImage):
+                    Task {
+                        await self.processSelection(rect, on: screen, snapshotImage: snapshotImage)
+                    }
                 }
             }
         }
