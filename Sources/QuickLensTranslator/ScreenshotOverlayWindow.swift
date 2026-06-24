@@ -185,9 +185,8 @@ private final class ScreenshotSelectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        if let snapshotImage {
-            NSImage(cgImage: snapshotImage, size: bounds.size).draw(in: bounds)
-        }
+        let frozenImage = snapshotImage.map { NSImage(cgImage: $0, size: bounds.size) }
+        frozenImage?.draw(in: bounds)
 
         NSColor.black.withAlphaComponent(0.26).setFill()
         bounds.fill()
@@ -197,10 +196,17 @@ private final class ScreenshotSelectionView: NSView {
             return
         }
 
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current?.compositingOperation = .clear
-        selectionRect.fill()
-        NSGraphicsContext.restoreGraphicsState()
+        if let frozenImage {
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: selectionRect).addClip()
+            frozenImage.draw(in: bounds)
+            NSGraphicsContext.restoreGraphicsState()
+        } else {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.compositingOperation = .clear
+            selectionRect.fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
 
         NSColor.controlAccentColor.setStroke()
         let border = NSBezierPath(rect: selectionRect.insetBy(dx: 0.5, dy: 0.5))
