@@ -109,7 +109,7 @@ final class ScreenshotOverlayWindow: NSPanel {
             defer: false
         )
 
-        level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) - 1)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false

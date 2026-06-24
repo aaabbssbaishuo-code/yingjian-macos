@@ -23,7 +23,7 @@ final class ScreenSnapshotCache {
                 do {
                     let snapshots = try await self.screenCaptureService.captureDisplaySnapshots()
                     self.appendFrame(Frame(capturedAt: Date(), snapshots: snapshots))
-                    try? await Task.sleep(for: .milliseconds(350))
+                    try? await Task.sleep(for: .milliseconds(160))
                 } catch ScreenCaptureError.permissionDenied {
                     try? await Task.sleep(for: .seconds(2))
                 } catch {
@@ -39,7 +39,7 @@ final class ScreenSnapshotCache {
         frames.removeAll()
     }
 
-    func snapshots(maxAge: TimeInterval = 2.4, preferredMinimumAge: TimeInterval = 0.18) -> [CGDirectDisplayID: ScreenSnapshot] {
+    func snapshots(maxAge: TimeInterval = 2.4, preferredMinimumAge: TimeInterval = 0.08) -> [CGDirectDisplayID: ScreenSnapshot] {
         let now = Date()
         let usableFrames = frames.filter {
             now.timeIntervalSince($0.capturedAt) <= maxAge
@@ -58,8 +58,8 @@ final class ScreenSnapshotCache {
 
     private func appendFrame(_ frame: Frame) {
         frames.append(frame)
-        if frames.count > 8 {
-            frames.removeFirst(frames.count - 8)
+        if frames.count > 16 {
+            frames.removeFirst(frames.count - 16)
         }
     }
 }
