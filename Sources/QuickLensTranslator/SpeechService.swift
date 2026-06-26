@@ -17,6 +17,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
     }
 
     var onStateChanged: ((State) -> Void)?
+    var onActiveParagraphChanged: ((Int?) -> Void)?
 
     override init() {
         super.init()
@@ -85,6 +86,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         paragraphQueue.removeAll()
         currentParagraphIndex = 0
         synthesizer.stopSpeaking()
+        onActiveParagraphChanged?(nil)
         state = .idle
     }
 
@@ -100,23 +102,19 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         currentParagraphIndex += 1
         guard currentParagraphIndex < paragraphQueue.count else {
             paragraphQueue.removeAll()
+            onActiveParagraphChanged?(nil)
             state = .idle
             return
         }
 
         pendingAdvanceTask?.cancel()
-        let nextParagraph = paragraphQueue[currentParagraphIndex]
-            pendingAdvanceTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(120))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let self, self.state != .paused else { return }
-                    if self.synthesizer.startSpeaking(nextParagraph) {
-                        self.state = .speaking
-                    } else {
-                        self.stop()
-                    }
-                }
+        pendingAdvanceTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.state != .paused else { return }
+                _ = self.startCurrentParagraph()
+            }
         }
     }
 
@@ -124,6 +122,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         guard currentParagraphIndex < paragraphQueue.count else { return false }
         let started = synthesizer.startSpeaking(paragraphQueue[currentParagraphIndex])
         if started {
+            onActiveParagraphChanged?(currentParagraphIndex)
             state = .speaking
         } else {
             stop()

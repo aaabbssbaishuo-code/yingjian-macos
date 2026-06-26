@@ -44,6 +44,9 @@ final class FloatingTranslationPanel: NSPanel {
         speechService.onStateChanged = { [weak model] state in
             model?.setSpeechState(state)
         }
+        speechService.onActiveParagraphChanged = { [weak model] index in
+            model?.setActiveSpeechParagraphIndex(index)
+        }
 
         currentSelection = selection
         currentScreen = screen
@@ -106,6 +109,7 @@ final class FloatingTranslationPanel: NSPanel {
         removeOutsideClickMonitor()
         speechService.stop()
         speechService.onStateChanged = nil
+        speechService.onActiveParagraphChanged = nil
         cardModel = nil
         hostingView = nil
         currentSelection = nil
@@ -220,6 +224,7 @@ private final class TranslationCardModel: ObservableObject {
     @Published private(set) var translations: [String] = []
     @Published private(set) var state = State.translating
     @Published private(set) var speechState = SpeechService.State.idle
+    @Published private(set) var activeSpeechParagraphIndex: Int?
 
     init(paragraphs: [String]) {
         self.paragraphs = paragraphs
@@ -255,6 +260,13 @@ private final class TranslationCardModel: ObservableObject {
 
     func setSpeechState(_ speechState: SpeechService.State) {
         self.speechState = speechState
+        if speechState == .idle {
+            activeSpeechParagraphIndex = nil
+        }
+    }
+
+    func setActiveSpeechParagraphIndex(_ index: Int?) {
+        activeSpeechParagraphIndex = index
     }
 }
 
@@ -320,46 +332,45 @@ private struct TranslationCardView: View {
         let verticalPadding: CGFloat = 32
         let spacing: CGFloat = 10
 
-        let translationHeight: CGFloat
+        let contentHeight: CGFloat
         switch model.state {
         case .translating:
-            translationHeight = 28
+            contentHeight = 28
         case .translated, .failed:
-            if model.translations.count <= 1 {
-                translationHeight = measuredTextHeight(
-                    model.translations.first ?? "",
-                    font: .systemFont(ofSize: 17, weight: .semibold),
+            let itemCount = displayItemCount(for: model)
+            contentHeight = (0..<itemCount).reduce(into: CGFloat(0)) { total, index in
+                let chineseFont = NSFont.systemFont(
+                    ofSize: itemCount == 1 ? 17 : 15,
+                    weight: .semibold
+                )
+                total += measuredTextHeight(
+                    translationText(for: model, at: index),
+                    font: chineseFont,
                     width: contentWidth
                 )
-            } else {
-                translationHeight = model.translations.enumerated().reduce(into: CGFloat(0)) { total, pair in
+
+                if let english = englishText(for: model, at: index),
+                   !english.isEmpty {
+                    total += 8
                     total += measuredTextHeight(
-                        pair.element,
-                        font: .systemFont(ofSize: 14, weight: .semibold),
+                        english,
+                        font: .systemFont(ofSize: 13),
                         width: contentWidth
                     )
-                    if pair.offset < model.translations.count - 1 {
-                        total += 1 + 20
-                    }
+                }
+
+                if itemCount > 1 {
+                    total += 14
+                }
+                if index < itemCount - 1 {
+                    total += 1 + 14
                 }
             }
         }
 
-        let englishPreviewHeight: CGFloat
-        if model.paragraphs.count == 1 {
-            englishPreviewHeight = measuredTextHeight(
-                model.paragraphs.first ?? "",
-                font: .systemFont(ofSize: 13),
-                width: contentWidth
-            )
-        } else {
-            englishPreviewHeight = 0
-        }
-
         let totalHeight = verticalPadding
             + topArea
-            + translationHeight
-            + (englishPreviewHeight > 0 ? spacing + englishPreviewHeight : 0)
+            + contentHeight
             + spacing
             + dividerArea
             + spacing
@@ -372,7 +383,7 @@ private struct TranslationCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-            translationContent
+                translationContent
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button(action: onClose) {
@@ -380,15 +391,6 @@ private struct TranslationCardView: View {
                 }
                 .buttonStyle(PanelIconButtonStyle())
                 .help("关闭")
-            }
-
-            if model.paragraphs.count == 1,
-               let english = model.paragraphs.first {
-                Text(english)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()
@@ -486,24 +488,18 @@ private struct TranslationCardView: View {
         case .translated, .failed:
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if model.translations.count <= 1 {
-                        Text(model.translations.first ?? "")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ForEach(Array(model.translations.enumerated()), id: \.offset) { index, text in
-                            Text(text)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 10)
+                    let itemCount = displayItemCount(for: model)
+                    ForEach(0..<itemCount, id: \.self) { index in
+                        TranslationParagraphRow(
+                            chinese: translationText(for: model, at: index),
+                            english: englishText(for: model, at: index),
+                            isSingle: itemCount == 1,
+                            isSpeaking: model.activeSpeechParagraphIndex == index
+                        )
 
-                            if index < model.translations.count - 1 {
-                                Divider()
-                            }
+                        if index < itemCount - 1 {
+                            Divider()
+                                .padding(.vertical, 7)
                         }
                     }
                 }
@@ -524,6 +520,66 @@ private struct TranslationCardView: View {
             return "Translation unavailable"
         }
     }
+}
+
+private struct TranslationParagraphRow: View {
+    let chinese: String
+    let english: String?
+    let isSingle: Bool
+    let isSpeaking: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(chinese)
+                .font(.system(size: isSingle ? 17 : 15, weight: .semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let english, !english.isEmpty {
+                Text(english)
+                    .font(.system(size: 13, weight: isSpeaking ? .medium : .regular))
+                    .foregroundStyle(isSpeaking ? Color.accentColor : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, isSpeaking ? 5 : 0)
+                    .padding(.horizontal, isSpeaking ? 8 : 0)
+                    .background {
+                        if isSpeaking {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.accentColor.opacity(0.12))
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.14), value: isSpeaking)
+            }
+        }
+        .padding(.vertical, isSingle ? 0 : 7)
+    }
+}
+
+@MainActor
+private func displayItemCount(for model: TranslationCardModel) -> Int {
+    if model.state == .failed {
+        return 1
+    }
+    return max(model.paragraphs.count, model.translations.count, 1)
+}
+
+@MainActor
+private func translationText(for model: TranslationCardModel, at index: Int) -> String {
+    if model.translations.indices.contains(index) {
+        return model.translations[index]
+    }
+    return model.translations.first ?? ""
+}
+
+@MainActor
+private func englishText(for model: TranslationCardModel, at index: Int) -> String? {
+    if model.state == .failed {
+        return model.fullEnglishText
+    }
+    guard model.paragraphs.indices.contains(index) else { return nil }
+    return model.paragraphs[index]
 }
 
 private func measuredTextHeight(_ text: String, font: NSFont, width: CGFloat) -> CGFloat {
