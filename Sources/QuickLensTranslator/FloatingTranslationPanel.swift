@@ -557,26 +557,32 @@ private struct TranslationParagraphRow: View {
                     .font(.system(size: 13))
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.easeOut(duration: 0.08), value: activeWordRange?.location)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
             }
         }
         .padding(.vertical, isSingle ? 0 : 7)
     }
 
     private func highlightedEnglishText(_ english: String, activeWordRange: NSRange?) -> Text {
+        var attributed = AttributedString(english)
+        attributed.foregroundColor = .secondary
+
         guard let activeWordRange,
               let range = Range(activeWordRange, in: english),
-              !range.isEmpty else {
-            return Text(english).foregroundColor(.secondary)
+              !range.isEmpty,
+              let lowerBound = AttributedString.Index(range.lowerBound, within: attributed),
+              let upperBound = AttributedString.Index(range.upperBound, within: attributed) else {
+            return Text(attributed)
         }
 
-        let prefix = String(english[..<range.lowerBound])
-        let word = String(english[range])
-        let suffix = String(english[range.upperBound...])
+        let highlightedRange = lowerBound..<upperBound
+        attributed[highlightedRange].foregroundColor = .accentColor
+        attributed[highlightedRange].backgroundColor = .accentColor.opacity(0.12)
 
-        return Text(prefix).foregroundColor(.secondary)
-            + Text(word).foregroundColor(.accentColor).bold().underline()
-            + Text(suffix).foregroundColor(.secondary)
+        return Text(attributed)
     }
 }
 
