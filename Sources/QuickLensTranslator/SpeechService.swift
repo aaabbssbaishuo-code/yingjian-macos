@@ -18,6 +18,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
 
     var onStateChanged: ((State) -> Void)?
     var onActiveParagraphChanged: ((Int?) -> Void)?
+    var onActiveWordRangeChanged: ((Int?, NSRange?) -> Void)?
 
     override init() {
         super.init()
@@ -28,7 +29,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         }) {
             synthesizer.setVoice(voice)
         }
-        synthesizer.rate = 175
+        synthesizer.rate = 148
         synthesizer.volume = 1.0
     }
 
@@ -87,6 +88,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         currentParagraphIndex = 0
         synthesizer.stopSpeaking()
         onActiveParagraphChanged?(nil)
+        onActiveWordRangeChanged?(nil, nil)
         state = .idle
     }
 
@@ -103,6 +105,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         guard currentParagraphIndex < paragraphQueue.count else {
             paragraphQueue.removeAll()
             onActiveParagraphChanged?(nil)
+            onActiveWordRangeChanged?(nil, nil)
             state = .idle
             return
         }
@@ -123,6 +126,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         let started = synthesizer.startSpeaking(paragraphQueue[currentParagraphIndex])
         if started {
             onActiveParagraphChanged?(currentParagraphIndex)
+            onActiveWordRangeChanged?(currentParagraphIndex, nil)
             state = .speaking
         } else {
             stop()
@@ -130,10 +134,18 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         return started
     }
 
+    func speechSynthesizer(
+        _ sender: NSSpeechSynthesizer,
+        willSpeakWord characterRange: NSRange,
+        of string: String
+    ) {
+        onActiveWordRangeChanged?(currentParagraphIndex, characterRange)
+    }
+
     private func configureRate(for paragraphs: [String]) {
         let totalCharacters = paragraphs.reduce(0) { $0 + $1.count }
-        let paragraphPenalty = max(0, paragraphs.count - 1) * 3
-        let lengthPenalty = min(totalCharacters / 250, 20)
-        synthesizer.rate = Float(max(150, 182 - paragraphPenalty - lengthPenalty))
+        let paragraphPenalty = max(0, paragraphs.count - 1) * 2
+        let lengthPenalty = min(totalCharacters / 220, 14)
+        synthesizer.rate = Float(max(138, 156 - paragraphPenalty - lengthPenalty))
     }
 }

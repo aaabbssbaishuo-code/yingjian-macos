@@ -47,6 +47,9 @@ final class FloatingTranslationPanel: NSPanel {
         speechService.onActiveParagraphChanged = { [weak model] index in
             model?.setActiveSpeechParagraphIndex(index)
         }
+        speechService.onActiveWordRangeChanged = { [weak model] paragraphIndex, range in
+            model?.setActiveSpeechWord(paragraphIndex: paragraphIndex, range: range)
+        }
 
         currentSelection = selection
         currentScreen = screen
@@ -110,6 +113,7 @@ final class FloatingTranslationPanel: NSPanel {
         speechService.stop()
         speechService.onStateChanged = nil
         speechService.onActiveParagraphChanged = nil
+        speechService.onActiveWordRangeChanged = nil
         cardModel = nil
         hostingView = nil
         currentSelection = nil
@@ -225,6 +229,7 @@ private final class TranslationCardModel: ObservableObject {
     @Published private(set) var state = State.translating
     @Published private(set) var speechState = SpeechService.State.idle
     @Published private(set) var activeSpeechParagraphIndex: Int?
+    @Published private(set) var activeSpeechWordRange: NSRange?
 
     init(paragraphs: [String]) {
         self.paragraphs = paragraphs
@@ -262,11 +267,20 @@ private final class TranslationCardModel: ObservableObject {
         self.speechState = speechState
         if speechState == .idle {
             activeSpeechParagraphIndex = nil
+            activeSpeechWordRange = nil
         }
     }
 
     func setActiveSpeechParagraphIndex(_ index: Int?) {
         activeSpeechParagraphIndex = index
+        if index == nil {
+            activeSpeechWordRange = nil
+        }
+    }
+
+    func setActiveSpeechWord(paragraphIndex: Int?, range: NSRange?) {
+        activeSpeechParagraphIndex = paragraphIndex
+        activeSpeechWordRange = range
     }
 }
 
@@ -494,7 +508,9 @@ private struct TranslationCardView: View {
                             chinese: translationText(for: model, at: index),
                             english: englishText(for: model, at: index),
                             isSingle: itemCount == 1,
-                            isSpeaking: model.activeSpeechParagraphIndex == index
+                            activeWordRange: model.activeSpeechParagraphIndex == index
+                                ? model.activeSpeechWordRange
+                                : nil
                         )
 
                         if index < itemCount - 1 {
@@ -526,7 +542,7 @@ private struct TranslationParagraphRow: View {
     let chinese: String
     let english: String?
     let isSingle: Bool
-    let isSpeaking: Bool
+    let activeWordRange: NSRange?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -537,23 +553,30 @@ private struct TranslationParagraphRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let english, !english.isEmpty {
-                Text(english)
-                    .font(.system(size: 13, weight: isSpeaking ? .medium : .regular))
-                    .foregroundStyle(isSpeaking ? Color.accentColor : Color.secondary)
+                highlightedEnglishText(english, activeWordRange: activeWordRange)
+                    .font(.system(size: 13))
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, isSpeaking ? 5 : 0)
-                    .padding(.horizontal, isSpeaking ? 8 : 0)
-                    .background {
-                        if isSpeaking {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(Color.accentColor.opacity(0.12))
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.14), value: isSpeaking)
+                    .animation(.easeOut(duration: 0.08), value: activeWordRange?.location)
             }
         }
         .padding(.vertical, isSingle ? 0 : 7)
+    }
+
+    private func highlightedEnglishText(_ english: String, activeWordRange: NSRange?) -> Text {
+        guard let activeWordRange,
+              let range = Range(activeWordRange, in: english),
+              !range.isEmpty else {
+            return Text(english).foregroundColor(.secondary)
+        }
+
+        let prefix = String(english[..<range.lowerBound])
+        let word = String(english[range])
+        let suffix = String(english[range.upperBound...])
+
+        return Text(prefix).foregroundColor(.secondary)
+            + Text(word).foregroundColor(.accentColor).bold().underline()
+            + Text(suffix).foregroundColor(.secondary)
     }
 }
 
