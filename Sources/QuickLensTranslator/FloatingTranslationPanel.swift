@@ -66,12 +66,6 @@ final class FloatingTranslationPanel: NSPanel {
                     successMessage: "已复制英文原文"
                 )
             },
-            onCopyChinese: { [weak self] in
-                self?.copyToPasteboard(
-                    model.translatedText,
-                    successMessage: "已复制中文译文"
-                )
-            },
             onClose: { [weak self] in
                 self?.dismiss()
             },
@@ -349,7 +343,6 @@ private struct TranslationCardView: View {
     let panelWidth: CGFloat
     let onSpeak: () -> Void
     let onCopyEnglish: () -> Void
-    let onCopyChinese: () -> Void
     let onClose: () -> Void
     let onHover: (Bool) -> Void
     let onTranslationFinished: () -> Void
@@ -444,19 +437,11 @@ private struct TranslationCardView: View {
                 .help(model.isPaused ? "继续朗读" : (model.isSpeaking ? "暂停朗读" : "朗读英文"))
 
                 Button(action: onCopyEnglish) {
-                    Text("EN")
-                        .font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "doc.on.doc")
                 }
                 .buttonStyle(PanelIconButtonStyle())
                 .help("复制英文")
                 .disabled(model.fullEnglishText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                Button(action: onCopyChinese) {
-                    Image(systemName: "doc.on.doc")
-                }
-                .buttonStyle(PanelIconButtonStyle())
-                .help("复制中文")
-                .disabled(model.translatedText == nil)
 
                 Spacer()
 
