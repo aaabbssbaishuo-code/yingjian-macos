@@ -60,11 +60,17 @@ final class FloatingTranslationPanel: NSPanel {
             onSpeak: { [weak self] in
                 self?.toggleSpeech(model.paragraphs)
             },
-            onCopy: {
-                guard let chinese = model.translatedText else { return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(chinese, forType: .string)
-                ToastPresenter.show(message: "已复制中文译文")
+            onCopyEnglish: { [weak self] in
+                self?.copyToPasteboard(
+                    model.fullEnglishText,
+                    successMessage: "已复制英文原文"
+                )
+            },
+            onCopyChinese: { [weak self] in
+                self?.copyToPasteboard(
+                    model.translatedText,
+                    successMessage: "已复制中文译文"
+                )
             },
             onClose: { [weak self] in
                 self?.dismiss()
@@ -133,6 +139,24 @@ final class FloatingTranslationPanel: NSPanel {
     private func toggleSpeech(_ paragraphs: [String]) {
         if !speechService.toggle(paragraphs: paragraphs) {
             ToastPresenter.show(message: "朗读失败，请稍后重试。")
+        }
+    }
+
+    private func copyToPasteboard(_ text: String?, successMessage: String) {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            ToastPresenter.show(message: "没有可复制的内容")
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.declareTypes([.string], owner: nil)
+
+        if pasteboard.setString(text, forType: .string) {
+            ToastPresenter.show(message: successMessage)
+        } else {
+            ToastPresenter.show(message: "复制失败，请稍后重试")
         }
     }
 
@@ -324,7 +348,8 @@ private struct TranslationCardView: View {
     @ObservedObject var model: TranslationCardModel
     let panelWidth: CGFloat
     let onSpeak: () -> Void
-    let onCopy: () -> Void
+    let onCopyEnglish: () -> Void
+    let onCopyChinese: () -> Void
     let onClose: () -> Void
     let onHover: (Bool) -> Void
     let onTranslationFinished: () -> Void
@@ -418,7 +443,15 @@ private struct TranslationCardView: View {
                 .buttonStyle(PanelIconButtonStyle(isActive: model.isSpeaking || model.isPaused))
                 .help(model.isPaused ? "继续朗读" : (model.isSpeaking ? "暂停朗读" : "朗读英文"))
 
-                Button(action: onCopy) {
+                Button(action: onCopyEnglish) {
+                    Text("EN")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(PanelIconButtonStyle())
+                .help("复制英文")
+                .disabled(model.fullEnglishText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button(action: onCopyChinese) {
                     Image(systemName: "doc.on.doc")
                 }
                 .buttonStyle(PanelIconButtonStyle())
