@@ -24,9 +24,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         super.init()
         synthesizer.delegate = self
 
-        if let voice = NSSpeechSynthesizer.availableVoices.first(where: {
-            $0.rawValue.localizedCaseInsensitiveContains("en")
-        }) {
+        if let voice = Self.preferredEnglishVoice() {
             synthesizer.setVoice(voice)
         }
         synthesizer.rate = 148
@@ -147,5 +145,52 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         let paragraphPenalty = max(0, paragraphs.count - 1) * 2
         let lengthPenalty = min(totalCharacters / 220, 14)
         synthesizer.rate = Float(max(138, 156 - paragraphPenalty - lengthPenalty))
+    }
+
+    private static func preferredEnglishVoice() -> NSSpeechSynthesizer.VoiceName? {
+        let availableVoices = NSSpeechSynthesizer.availableVoices
+        let preferredNames = [
+            "Samantha",
+            "Ava",
+            "Nicky",
+            "Zoe",
+            "Susan",
+            "Allison",
+            "Tom",
+            "Daniel"
+        ]
+
+        for name in preferredNames {
+            if let voice = availableVoices.first(where: { voice in
+                let attributes = NSSpeechSynthesizer.attributes(forVoice: voice)
+                let voiceName = attributes[.name] as? String
+                let locale = attributes[.localeIdentifier] as? String
+
+                return locale?.replacingOccurrences(of: "_", with: "-") == "en-US"
+                    && voiceName?.localizedCaseInsensitiveContains(name) == true
+            }) {
+                return voice
+            }
+        }
+
+        return availableVoices.first(where: { voice in
+            let attributes = NSSpeechSynthesizer.attributes(forVoice: voice)
+            let locale = attributes[.localeIdentifier] as? String
+            let voiceName = attributes[.name] as? String ?? ""
+            let identifier = voice.rawValue.lowercased()
+
+            guard locale?.lowercased().hasPrefix("en") == true else {
+                return false
+            }
+
+            return !identifier.contains("speech.synthesis.voice")
+                && !voiceName.localizedCaseInsensitiveContains("Eddy")
+                && !voiceName.localizedCaseInsensitiveContains("Flo")
+                && !voiceName.localizedCaseInsensitiveContains("Grand")
+                && !voiceName.localizedCaseInsensitiveContains("Reed")
+                && !voiceName.localizedCaseInsensitiveContains("Rocko")
+                && !voiceName.localizedCaseInsensitiveContains("Sandy")
+                && !voiceName.localizedCaseInsensitiveContains("Shelley")
+        })
     }
 }
