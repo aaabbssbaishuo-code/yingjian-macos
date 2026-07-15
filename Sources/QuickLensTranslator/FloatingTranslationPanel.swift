@@ -648,16 +648,25 @@ private struct InteractiveEnglishText: NSViewRepresentable {
 
 private final class InteractiveEnglishTextView: NSTextView {
     var onWordTapped: ((String, NSRange) -> Void)?
+    private let backingTextStorage: NSTextStorage
 
     init() {
-        super.init(frame: .zero)
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            containerSize: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(textContainer)
+        backingTextStorage = textStorage
+        super.init(frame: .zero, textContainer: textContainer)
         isEditable = false
         isSelectable = false
         isRichText = true
         drawsBackground = false
         textContainerInset = .zero
-        textContainer?.lineFragmentPadding = 0
-        textContainer?.widthTracksTextView = true
+        textContainer.lineFragmentPadding = 0
+        textContainer.widthTracksTextView = true
         isHorizontallyResizable = false
         isVerticallyResizable = true
     }
