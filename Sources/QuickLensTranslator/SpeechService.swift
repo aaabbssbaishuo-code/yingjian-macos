@@ -33,7 +33,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         if let voice = Self.preferredEnglishVoice() {
             synthesizer.setVoice(voice)
         }
-        synthesizer.rate = 148
+        synthesizer.rate = 140
         synthesizer.volume = 1.0
     }
 
@@ -77,7 +77,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
             )
         ]
         currentQueueIndex = 0
-        synthesizer.rate = 142
+        synthesizer.rate = 134
         return startCurrentItem()
     }
 
@@ -178,7 +178,7 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         let totalCharacters = paragraphs.reduce(0) { $0 + $1.count }
         let paragraphPenalty = max(0, paragraphs.count - 1) * 2
         let lengthPenalty = min(totalCharacters / 220, 14)
-        synthesizer.rate = Float(max(138, 156 - paragraphPenalty - lengthPenalty))
+        synthesizer.rate = Float(max(130, 146 - paragraphPenalty - lengthPenalty))
     }
 
     private static func preferredEnglishVoice() -> NSSpeechSynthesizer.VoiceName? {
