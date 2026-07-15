@@ -8,9 +8,15 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         case paused
     }
 
+    private struct SpeechItem {
+        let text: String
+        let paragraphIndex: Int
+        let sourceRangeOffset: Int
+    }
+
     private let synthesizer = NSSpeechSynthesizer()
-    private var paragraphQueue: [String] = []
-    private var currentParagraphIndex = 0
+    private var speechQueue: [SpeechItem] = []
+    private var currentQueueIndex = 0
     private var pendingAdvanceTask: Task<Void, Never>?
     private(set) var state: State = .idle {
         didSet { onStateChanged?(state) }
@@ -42,16 +48,37 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
     func speak(paragraphs: [String]) -> Bool {
         stop()
 
-        paragraphQueue = paragraphs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        currentParagraphIndex = 0
+        speechQueue = paragraphs.enumerated().compactMap { index, paragraph in
+            let text = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return SpeechItem(text: text, paragraphIndex: index, sourceRangeOffset: 0)
+        }
+        currentQueueIndex = 0
 
-        guard !paragraphQueue.isEmpty else {
+        guard !speechQueue.isEmpty else {
             return false
         }
 
-        configureRate(for: paragraphQueue)
-        return startCurrentParagraph()
+        configureRate(for: speechQueue.map(\.text))
+        return startCurrentItem()
+    }
+
+    func speakWord(_ word: String, paragraphIndex: Int, sourceRange: NSRange) -> Bool {
+        stop()
+
+        let text = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+
+        speechQueue = [
+            SpeechItem(
+                text: text,
+                paragraphIndex: paragraphIndex,
+                sourceRangeOffset: sourceRange.location
+            )
+        ]
+        currentQueueIndex = 0
+        synthesizer.rate = 142
+        return startCurrentItem()
     }
 
     func pause() {
@@ -82,8 +109,8 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
     func stop() {
         pendingAdvanceTask?.cancel()
         pendingAdvanceTask = nil
-        paragraphQueue.removeAll()
-        currentParagraphIndex = 0
+        speechQueue.removeAll()
+        currentQueueIndex = 0
         synthesizer.stopSpeaking()
         onActiveParagraphChanged?(nil)
         onActiveWordRangeChanged?(nil, nil)
@@ -99,9 +126,9 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
             return
         }
 
-        currentParagraphIndex += 1
-        guard currentParagraphIndex < paragraphQueue.count else {
-            paragraphQueue.removeAll()
+        currentQueueIndex += 1
+        guard currentQueueIndex < speechQueue.count else {
+            speechQueue.removeAll()
             onActiveParagraphChanged?(nil)
             onActiveWordRangeChanged?(nil, nil)
             state = .idle
@@ -114,17 +141,18 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.state != .paused else { return }
-                _ = self.startCurrentParagraph()
+                _ = self.startCurrentItem()
             }
         }
     }
 
-    private func startCurrentParagraph() -> Bool {
-        guard currentParagraphIndex < paragraphQueue.count else { return false }
-        let started = synthesizer.startSpeaking(paragraphQueue[currentParagraphIndex])
+    private func startCurrentItem() -> Bool {
+        guard speechQueue.indices.contains(currentQueueIndex) else { return false }
+        let item = speechQueue[currentQueueIndex]
+        let started = synthesizer.startSpeaking(item.text)
         if started {
-            onActiveParagraphChanged?(currentParagraphIndex)
-            onActiveWordRangeChanged?(currentParagraphIndex, nil)
+            onActiveParagraphChanged?(item.paragraphIndex)
+            onActiveWordRangeChanged?(item.paragraphIndex, nil)
             state = .speaking
         } else {
             stop()
@@ -137,7 +165,13 @@ final class SpeechService: NSObject, NSSpeechSynthesizerDelegate {
         willSpeakWord characterRange: NSRange,
         of string: String
     ) {
-        onActiveWordRangeChanged?(currentParagraphIndex, characterRange)
+        guard speechQueue.indices.contains(currentQueueIndex) else { return }
+        let item = speechQueue[currentQueueIndex]
+        let sourceRange = NSRange(
+            location: item.sourceRangeOffset + characterRange.location,
+            length: characterRange.length
+        )
+        onActiveWordRangeChanged?(item.paragraphIndex, sourceRange)
     }
 
     private func configureRate(for paragraphs: [String]) {

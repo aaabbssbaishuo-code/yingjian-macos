@@ -1,4 +1,5 @@
 import AppKit
+import NaturalLanguage
 import SwiftUI
 import Translation
 
@@ -59,6 +60,9 @@ final class FloatingTranslationPanel: NSPanel {
             panelWidth: panelWidth,
             onSpeak: { [weak self] in
                 self?.toggleSpeech(model.paragraphs)
+            },
+            onSpeakWord: { [weak self] word, paragraphIndex, range in
+                self?.speakWord(word, paragraphIndex: paragraphIndex, range: range)
             },
             onCopyEnglish: { [weak self] in
                 self?.copyToPasteboard(
@@ -132,6 +136,13 @@ final class FloatingTranslationPanel: NSPanel {
 
     private func toggleSpeech(_ paragraphs: [String]) {
         if !speechService.toggle(paragraphs: paragraphs) {
+            ToastPresenter.show(message: "朗读失败，请稍后重试。")
+        }
+    }
+
+    private func speakWord(_ word: String, paragraphIndex: Int, range: NSRange) {
+        dismissTask?.cancel()
+        if !speechService.speakWord(word, paragraphIndex: paragraphIndex, sourceRange: range) {
             ToastPresenter.show(message: "朗读失败，请稍后重试。")
         }
     }
@@ -342,6 +353,7 @@ private struct TranslationCardView: View {
     @ObservedObject var model: TranslationCardModel
     let panelWidth: CGFloat
     let onSpeak: () -> Void
+    let onSpeakWord: (String, Int, NSRange) -> Void
     let onCopyEnglish: () -> Void
     let onClose: () -> Void
     let onHover: (Bool) -> Void
@@ -525,10 +537,12 @@ private struct TranslationCardView: View {
                         TranslationParagraphRow(
                             chinese: translationText(for: model, at: index),
                             english: englishText(for: model, at: index),
+                            paragraphIndex: index,
                             isSingle: itemCount == 1,
                             activeWordRange: model.activeSpeechParagraphIndex == index
                                 ? model.activeSpeechWordRange
-                                : nil
+                                : nil,
+                            onSpeakWord: onSpeakWord
                         )
 
                         if index < itemCount - 1 {
@@ -559,8 +573,10 @@ private struct TranslationCardView: View {
 private struct TranslationParagraphRow: View {
     let chinese: String
     let english: String?
+    let paragraphIndex: Int
     let isSingle: Bool
     let activeWordRange: NSRange?
+    let onSpeakWord: (String, Int, NSRange) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -571,36 +587,176 @@ private struct TranslationParagraphRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let english, !english.isEmpty {
-                highlightedEnglishText(english, activeWordRange: activeWordRange)
-                    .font(.system(size: 13))
-                    .fixedSize(horizontal: false, vertical: true)
+                InteractiveEnglishText(
+                    text: english,
+                    activeWordRange: activeWordRange,
+                    onWordTapped: { word, range in
+                        onSpeakWord(word, paragraphIndex, range)
+                    }
+                )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .transaction { transaction in
                         transaction.animation = nil
                         transaction.disablesAnimations = true
                     }
+                    .help("点击英文单词即可朗读")
             }
         }
         .padding(.vertical, isSingle ? 0 : 7)
     }
+}
 
-    private func highlightedEnglishText(_ english: String, activeWordRange: NSRange?) -> Text {
-        var attributed = AttributedString(english)
-        attributed.foregroundColor = .secondary
+private struct InteractiveEnglishText: NSViewRepresentable {
+    let text: String
+    let activeWordRange: NSRange?
+    let onWordTapped: (String, NSRange) -> Void
 
-        guard let activeWordRange,
-              let range = Range(activeWordRange, in: english),
-              !range.isEmpty,
-              let lowerBound = AttributedString.Index(range.lowerBound, within: attributed),
-              let upperBound = AttributedString.Index(range.upperBound, within: attributed) else {
-            return Text(attributed)
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onWordTapped: onWordTapped)
+    }
+
+    func makeNSView(context: Context) -> InteractiveEnglishTextView {
+        let textView = InteractiveEnglishTextView()
+        textView.onWordTapped = context.coordinator.onWordTapped
+        textView.update(text: text, activeWordRange: activeWordRange)
+        return textView
+    }
+
+    func updateNSView(_ nsView: InteractiveEnglishTextView, context: Context) {
+        context.coordinator.onWordTapped = onWordTapped
+        nsView.onWordTapped = context.coordinator.onWordTapped
+        nsView.update(text: text, activeWordRange: activeWordRange)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: InteractiveEnglishTextView,
+        context: Context
+    ) -> CGSize? {
+        guard let width = proposal.width, width > 0 else { return nil }
+        return nsView.sizeThatFits(width: width)
+    }
+
+    final class Coordinator {
+        var onWordTapped: (String, NSRange) -> Void
+
+        init(onWordTapped: @escaping (String, NSRange) -> Void) {
+            self.onWordTapped = onWordTapped
+        }
+    }
+}
+
+private final class InteractiveEnglishTextView: NSTextView {
+    var onWordTapped: ((String, NSRange) -> Void)?
+
+    init() {
+        super.init(frame: .zero)
+        isEditable = false
+        isSelectable = false
+        isRichText = true
+        drawsBackground = false
+        textContainerInset = .zero
+        textContainer?.lineFragmentPadding = 0
+        textContainer?.widthTracksTextView = true
+        isHorizontallyResizable = false
+        isVerticallyResizable = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    func update(text: String, activeWordRange: NSRange?) {
+        guard string != text || highlightedRange != activeWordRange else { return }
+
+        let attributed = NSMutableAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]
+        )
+        if let activeWordRange,
+           NSMaxRange(activeWordRange) <= attributed.length {
+            attributed.addAttributes(
+                [
+                    .foregroundColor: NSColor.controlAccentColor,
+                    .backgroundColor: NSColor.controlAccentColor.withAlphaComponent(0.12)
+                ],
+                range: activeWordRange
+            )
         }
 
-        let highlightedRange = lowerBound..<upperBound
-        attributed[highlightedRange].foregroundColor = .accentColor
-        attributed[highlightedRange].backgroundColor = .accentColor.opacity(0.12)
+        textStorage?.setAttributedString(attributed)
+        highlightedRange = activeWordRange
+        invalidateIntrinsicContentSize()
+    }
 
-        return Text(attributed)
+    func sizeThatFits(width: CGFloat) -> CGSize {
+        guard let textContainer, let layoutManager else {
+            return CGSize(width: width, height: 18)
+        }
+
+        textContainer.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        return CGSize(width: width, height: max(18, ceil(usedRect.height)))
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let word = word(at: convert(event.locationInWindow, from: nil)) else {
+            super.mouseDown(with: event)
+            return
+        }
+        onWordTapped?(word.text, word.range)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    private var highlightedRange: NSRange?
+
+    private func word(at point: CGPoint) -> (text: String, range: NSRange)? {
+        guard !string.isEmpty,
+              let textContainer,
+              let layoutManager else {
+            return nil
+        }
+
+        let containerPoint = CGPoint(
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
+        )
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        )
+        guard glyphRect.insetBy(dx: -2, dy: -2).contains(containerPoint) else { return nil }
+
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        let source = string
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = source
+        tokenizer.setLanguage(.english)
+
+        var result: (String, NSRange)?
+        tokenizer.enumerateTokens(in: source.startIndex..<source.endIndex) { range, _ in
+            let tokenRange = NSRange(range, in: source)
+            if NSLocationInRange(characterIndex, tokenRange) {
+                result = (String(source[range]), tokenRange)
+                return false
+            }
+            return true
+        }
+        return result
     }
 }
 
