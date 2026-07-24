@@ -580,16 +580,20 @@ private struct TranslationParagraphRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(chinese)
-                .font(.system(size: isSingle ? 17 : 15, weight: .semibold))
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            SelectablePanelText(
+                text: chinese,
+                font: .systemFont(ofSize: isSingle ? 17 : 15, weight: .semibold),
+                textColor: .labelColor,
+                activeWordRange: nil,
+                onWordTapped: nil
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let english, !english.isEmpty {
-                InteractiveEnglishText(
+                SelectablePanelText(
                     text: english,
+                    font: .systemFont(ofSize: 13),
+                    textColor: .secondaryLabelColor,
                     activeWordRange: activeWordRange,
                     onWordTapped: { word, range in
                         onSpeakWord(word, paragraphIndex, range)
@@ -607,31 +611,43 @@ private struct TranslationParagraphRow: View {
     }
 }
 
-private struct InteractiveEnglishText: NSViewRepresentable {
+private struct SelectablePanelText: NSViewRepresentable {
     let text: String
+    let font: NSFont
+    let textColor: NSColor
     let activeWordRange: NSRange?
-    let onWordTapped: (String, NSRange) -> Void
+    let onWordTapped: ((String, NSRange) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onWordTapped: onWordTapped)
     }
 
-    func makeNSView(context: Context) -> InteractiveEnglishTextView {
-        let textView = InteractiveEnglishTextView()
+    func makeNSView(context: Context) -> SelectablePanelTextView {
+        let textView = SelectablePanelTextView()
         textView.onWordTapped = context.coordinator.onWordTapped
-        textView.update(text: text, activeWordRange: activeWordRange)
+        textView.update(
+            text: text,
+            font: font,
+            textColor: textColor,
+            activeWordRange: activeWordRange
+        )
         return textView
     }
 
-    func updateNSView(_ nsView: InteractiveEnglishTextView, context: Context) {
+    func updateNSView(_ nsView: SelectablePanelTextView, context: Context) {
         context.coordinator.onWordTapped = onWordTapped
         nsView.onWordTapped = context.coordinator.onWordTapped
-        nsView.update(text: text, activeWordRange: activeWordRange)
+        nsView.update(
+            text: text,
+            font: font,
+            textColor: textColor,
+            activeWordRange: activeWordRange
+        )
     }
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        nsView: InteractiveEnglishTextView,
+        nsView: SelectablePanelTextView,
         context: Context
     ) -> CGSize? {
         guard let width = proposal.width, width > 0 else { return nil }
@@ -639,15 +655,15 @@ private struct InteractiveEnglishText: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var onWordTapped: (String, NSRange) -> Void
+        var onWordTapped: ((String, NSRange) -> Void)?
 
-        init(onWordTapped: @escaping (String, NSRange) -> Void) {
+        init(onWordTapped: ((String, NSRange) -> Void)?) {
             self.onWordTapped = onWordTapped
         }
     }
 }
 
-private final class InteractiveEnglishTextView: NSTextView {
+private final class SelectablePanelTextView: NSTextView {
     var onWordTapped: ((String, NSRange) -> Void)?
     private let backingTextStorage: NSTextStorage
 
@@ -677,16 +693,26 @@ private final class InteractiveEnglishTextView: NSTextView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(text: String, activeWordRange: NSRange?) {
-        guard string != text || highlightedRange != activeWordRange else { return }
+    func update(
+        text: String,
+        font: NSFont,
+        textColor: NSColor,
+        activeWordRange: NSRange?
+    ) {
+        guard string != text
+                || currentFont != font
+                || currentTextColor != textColor
+                || highlightedRange != activeWordRange else {
+            return
+        }
 
         let selection = selectedRange()
 
         let attributed = NSMutableAttributedString(
             string: text,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor.secondaryLabelColor
+                .font: font,
+                .foregroundColor: textColor
             ]
         )
         if let activeWordRange,
@@ -704,6 +730,8 @@ private final class InteractiveEnglishTextView: NSTextView {
         if NSMaxRange(selection) <= attributed.length {
             setSelectedRange(selection)
         }
+        currentFont = font
+        currentTextColor = textColor
         highlightedRange = activeWordRange
         invalidateIntrinsicContentSize()
     }
@@ -720,7 +748,10 @@ private final class InteractiveEnglishTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let clickedWord = event.clickCount == 1
+        window?.makeKey()
+        window?.makeFirstResponder(self)
+
+        let clickedWord = event.clickCount == 1 && onWordTapped != nil
             ? word(at: convert(event.locationInWindow, from: nil))
             : nil
 
@@ -731,7 +762,34 @@ private final class InteractiveEnglishTextView: NSTextView {
         }
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.command),
+           event.charactersIgnoringModifiers?.lowercased() == "c",
+           copySelectedText() {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private var currentFont: NSFont?
+    private var currentTextColor: NSColor?
     private var highlightedRange: NSRange?
+
+    @discardableResult
+    private func copySelectedText() -> Bool {
+        let selection = selectedRange()
+        guard selection.length > 0,
+              NSMaxRange(selection) <= (string as NSString).length else {
+            return false
+        }
+
+        let selectedText = (string as NSString).substring(with: selection)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.declareTypes([.string], owner: nil)
+        return pasteboard.setString(selectedText, forType: .string)
+    }
 
     private func word(at point: CGPoint) -> (text: String, range: NSRange)? {
         guard !string.isEmpty,
