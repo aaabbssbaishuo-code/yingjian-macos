@@ -583,6 +583,7 @@ private struct TranslationParagraphRow: View {
             Text(chinese)
                 .font(.system(size: isSingle ? 17 : 15, weight: .semibold))
                 .foregroundStyle(.primary)
+                .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -599,7 +600,7 @@ private struct TranslationParagraphRow: View {
                         transaction.animation = nil
                         transaction.disablesAnimations = true
                     }
-                    .help("点击英文单词即可朗读")
+                    .help("拖拽选择并复制；单击单词朗读")
             }
         }
         .padding(.vertical, isSingle ? 0 : 7)
@@ -661,7 +662,7 @@ private final class InteractiveEnglishTextView: NSTextView {
         backingTextStorage = textStorage
         super.init(frame: .zero, textContainer: textContainer)
         isEditable = false
-        isSelectable = false
+        isSelectable = true
         isRichText = true
         drawsBackground = false
         textContainerInset = .zero
@@ -676,10 +677,10 @@ private final class InteractiveEnglishTextView: NSTextView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var acceptsFirstResponder: Bool { false }
-
     func update(text: String, activeWordRange: NSRange?) {
         guard string != text || highlightedRange != activeWordRange else { return }
+
+        let selection = selectedRange()
 
         let attributed = NSMutableAttributedString(
             string: text,
@@ -700,6 +701,9 @@ private final class InteractiveEnglishTextView: NSTextView {
         }
 
         textStorage?.setAttributedString(attributed)
+        if NSMaxRange(selection) <= attributed.length {
+            setSelectedRange(selection)
+        }
         highlightedRange = activeWordRange
         invalidateIntrinsicContentSize()
     }
@@ -716,16 +720,15 @@ private final class InteractiveEnglishTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let word = word(at: convert(event.locationInWindow, from: nil)) else {
-            super.mouseDown(with: event)
-            return
-        }
-        onWordTapped?(word.text, word.range)
-    }
+        let clickedWord = event.clickCount == 1
+            ? word(at: convert(event.locationInWindow, from: nil))
+            : nil
 
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .pointingHand)
+        super.mouseDown(with: event)
+
+        if selectedRange().length == 0, let clickedWord {
+            onWordTapped?(clickedWord.text, clickedWord.range)
+        }
     }
 
     private var highlightedRange: NSRange?
