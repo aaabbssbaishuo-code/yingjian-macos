@@ -19,27 +19,30 @@ final class CaptureCoordinator {
         Task { [weak self] in
             guard let self else { return }
 
-            let snapshots: [CGDirectDisplayID: ScreenSnapshot]
             do {
-                snapshots = try await screenCaptureService.captureDisplaySnapshots()
-            } catch {
-                snapshots = [:]
-            }
+                let snapshots = try await screenCaptureService.captureDisplaySnapshots()
 
-            self.overlayController.beginSelection(snapshots: snapshots) { [weak self] result in
-                guard let self else { return }
+                self.overlayController.beginSelection(snapshots: snapshots) { [weak self] result in
+                    guard let self else { return }
 
-                switch result {
-                case .cancelled:
-                    self.isCapturing = false
-                case .tooSmall:
-                    self.isCapturing = false
-                    ToastPresenter.show(message: "选区过小，请重新选择。")
-                case .selected(let rect, let screen, let snapshotImage):
-                    Task {
-                        await self.processSelection(rect, on: screen, snapshotImage: snapshotImage)
+                    switch result {
+                    case .cancelled:
+                        self.isCapturing = false
+                    case .tooSmall:
+                        self.isCapturing = false
+                        ToastPresenter.show(message: "选区过小，请重新选择。")
+                    case .selected(let rect, let screen, let snapshotImage):
+                        Task {
+                            await self.processSelection(rect, on: screen, snapshotImage: snapshotImage)
+                        }
                     }
                 }
+            } catch ScreenCaptureError.permissionDenied {
+                self.isCapturing = false
+                PermissionManager.requestScreenCapturePermission()
+            } catch {
+                self.isCapturing = false
+                ToastPresenter.show(message: "无法冻结当前屏幕，请稍后重试。")
             }
         }
     }

@@ -20,14 +20,34 @@ struct ScreenCaptureService {
             throw ScreenCaptureError.permissionDenied
         }
 
+        let mouseLocation = NSEvent.mouseLocation
+        let screens = NSScreen.screens.sorted { left, right in
+            let leftContainsPointer = left.frame.contains(mouseLocation)
+            let rightContainsPointer = right.frame.contains(mouseLocation)
+            if leftContainsPointer != rightContainsPointer {
+                return leftContainsPointer
+            }
+            return left.frame.minX < right.frame.minX
+        }
+
+        let excludedWindows: [SCWindow]
+        if let ownBundleIdentifier = Bundle.main.bundleIdentifier {
+            excludedWindows = content.windows.filter { window in
+                window.owningApplication?.bundleIdentifier == ownBundleIdentifier
+            }
+        } else {
+            excludedWindows = []
+        }
+
         var snapshots: [CGDirectDisplayID: ScreenSnapshot] = [:]
-        for screen in NSScreen.screens {
+        for screen in screens {
             guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
                 as? CGDirectDisplayID,
                   let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                continue
+                throw ScreenCaptureError.displayNotFound
             }
 
+            let scale = screen.backingScaleFactor
             let configuration = SCStreamConfiguration()
             configuration.sourceRect = CGRect(
                 x: 0,
@@ -35,13 +55,13 @@ struct ScreenCaptureService {
                 width: display.width,
                 height: display.height
             )
-            configuration.width = display.width
-            configuration.height = display.height
+            configuration.width = max(1, Int(CGFloat(display.width) * scale))
+            configuration.height = max(1, Int(CGFloat(display.height) * scale))
             configuration.showsCursor = false
             configuration.capturesAudio = false
             configuration.pixelFormat = kCVPixelFormatType_32BGRA
 
-            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
             let image = try await SCScreenshotManager.captureImage(
                 contentFilter: filter,
                 configuration: configuration
@@ -49,6 +69,9 @@ struct ScreenCaptureService {
             snapshots[displayID] = ScreenSnapshot(screen: screen, image: image)
         }
 
+        guard snapshots.count == screens.count else {
+            throw ScreenCaptureError.displayNotFound
+        }
         return snapshots
     }
 

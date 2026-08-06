@@ -142,13 +142,15 @@ final class ScreenshotOverlayWindow: NSPanel {
 private final class ScreenshotSelectionView: NSView {
     private let selectionState: ScreenshotOverlayState
     private let screen: NSScreen
-    private let snapshotImage: CGImage?
+    private let frozenImage: NSImage?
     var onSelection: ((CGRect) -> Void)?
 
     init(selectionState: ScreenshotOverlayState, screen: NSScreen, snapshotImage: CGImage?) {
         self.selectionState = selectionState
         self.screen = screen
-        self.snapshotImage = snapshotImage
+        frozenImage = snapshotImage.map { image in
+            NSImage(cgImage: image, size: screen.frame.size)
+        }
         super.init(frame: .zero)
     }
 
@@ -185,6 +187,8 @@ private final class ScreenshotSelectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
+        frozenImage?.draw(in: bounds)
+
         NSColor.black.withAlphaComponent(0.26).setFill()
         bounds.fill()
 
@@ -193,7 +197,6 @@ private final class ScreenshotSelectionView: NSView {
             return
         }
 
-        let frozenImage = snapshotImage.map { NSImage(cgImage: $0, size: bounds.size) }
         if let frozenImage {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(rect: selectionRect).addClip()
