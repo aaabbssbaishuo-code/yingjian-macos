@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="Resources/README-hero.png" alt="英见 YingSee 产品展示">
+</p>
+
 <div align="center">
   <img src="Resources/AppIcon.png" width="120" height="120" alt="英见 YingSee 图标">
   <h1>英见 · YingSee</h1>
   <p><strong>看不懂的英文，框一下就懂。</strong></p>
-  <p>按下 <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>T</kbd>，框选屏幕上的英文，中文就在原位置附近出现。</p>
+  <p>按下快捷键，框选屏幕上的英文，中文就在原位置附近出现。默认快捷键为 <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>T</kbd>。</p>
 
   <p>
     <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest"><img src="https://img.shields.io/github/v/release/aaabbssbaishuo-code/yingjian-macos?display_name=tag&label=下载" alt="下载最新公开版"></a>
@@ -18,27 +22,27 @@
   </p>
 </div>
 
-## 它解决的不是翻译，是“看得见却拿不到”
+## 它解决的不只是翻译，而是“看得见却拿不到”
 
-软件按钮、系统弹窗、图片文字不能复制。鼠标一移开，hover 提示和临时气泡就消失。为了看懂一句英文，还要截图、保存、打开翻译网站，再切回原来的工作。
+软件按钮、系统弹窗和图片里的文字无法复制。鼠标一移开，悬停提示和临时气泡就会消失。为了看懂一句英文，还要截图、保存、打开翻译网站，再切回原来的工作。
 
 英见把这件事缩短成三步：
 
 ```text
-按下 ⌘ ⇧ T  →  拖拽框选英文  →  在原位置附近看中文
+按下快捷键  →  拖拽框选英文  →  在原位置附近看中文
 ```
 
 不用复制，不用上传图片，不用离开当前应用。
 
-## 连会消失的英文，也能留下来翻译
+## 会消失的英文，也能留住再翻译
 
-普通截图工具出现时，鼠标已经离开原位置，hover、右键菜单和临时弹层也随之消失。
+普通截图工具出现时，鼠标往往已经离开原位置，悬停提示、右键菜单和临时弹层也会随之消失。
 
-英见会先冻结你触发快捷键那一刻的屏幕，再让你框选。眼前的菜单、提示和弹层会留在冻结画面中，直到你完成选择。
+英见会先冻结你按下快捷键那一刻的屏幕，再让你框选。眼前的菜单、提示和弹层会留在冻结画面中，直到你完成选择。
 
 这意味着你可以直接翻译：
 
-- Figma、开发工具和专业软件里的 hover 提示
+- Figma、开发工具和专业软件里的悬停提示（hover）
 - 右键菜单、系统弹窗和错误信息
 - 网页图片、视频画面和无法复制的文字
 
@@ -73,7 +77,7 @@
 - 当前版本支持 **英文 → 简体中文**
 
 > [!IMPORTANT]
-> 当前公开安装包为 `v0.1.3`。主分支中的“冻结 hover、菜单和临时弹层”等最新改进尚未进入该安装包；要体验 README 描述的完整最新功能，请先[从源码构建](#从源码构建)。
+> 当前公开安装包为 `v0.1.3`。主分支中的“冻结悬停提示、菜单和临时弹层”等最新改进尚未进入该安装包；要体验 README 描述的完整最新功能，请先[从源码构建](#从源码构建)。
 
 ### 安装公开版
 
@@ -99,12 +103,18 @@
 
 ## 使用方法
 
-1. 停留在想看懂的英文界面上，hover 提示或右键菜单可以保持打开。
-2. 按下 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>。
+![按下快捷键，框选英文并查看中文翻译](Resources/README-usage.png)
+
+1. 停留在想看懂的英文界面上，悬停提示或右键菜单可以保持打开。
+2. 按下你设置的快捷键。默认快捷键为 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>。
 3. 屏幕定格后，拖拽框选英文区域，松开鼠标即自动确认。
-4. 中文会显示在选区附近。点击喇叭朗读，点击复制按钮复制原文。
+4. 中文会显示在选区附近。单击喇叭可朗读英文，单击复制按钮可复制原文。
 
 按 <kbd>Esc</kbd> 可以随时取消。
+
+### 自定义快捷键
+
+打开菜单栏中的英见，选择“设置快捷键…”，然后直接按下你习惯的组合键并保存。设置会自动保留，下次启动仍然有效；也可以随时恢复默认的 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>。
 
 ## 常见问题
 
@@ -127,7 +137,7 @@ Apple Translation 需要先准备英语和简体中文语言模型。下载完�
 </details>
 
 <details>
-<summary><strong>为什么框选时，真实应用里的 hover 提示已经消失了？</strong></summary>
+<summary><strong>为什么框选时，真实应用里的悬停提示已经消失了？</strong></summary>
 <br>
 这是预期行为。英见在快捷键触发瞬间冻结了屏幕；你框选的是冻结副本，所以触发瞬间看到的提示仍然可以被识别。
 </details>
@@ -189,6 +199,7 @@ Sources/QuickLensTranslator/
 ├── PermissionManager.swift
 ├── ScreenCaptureService.swift
 ├── ScreenshotOverlayWindow.swift
+├── ShortcutRecorder.swift
 ├── SpeechService.swift
 └── TranslationService.swift
 ```
@@ -197,4 +208,3 @@ Sources/QuickLensTranslator/
 ## 开源许可
 
 英见采用 [MIT License](LICENSE)。
-
