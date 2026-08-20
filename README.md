@@ -1,156 +1,142 @@
 <div align="center">
-  <img src="Resources/AppIcon.png" width="128" height="128" alt="英见 YingSee 图标">
+  <img src="Resources/AppIcon.png" width="120" height="120" alt="英见 YingSee 图标">
   <h1>英见 · YingSee</h1>
-  <p><strong>看见英文，就地理解。</strong></p>
-  <p><strong>See it. Translate it.</strong></p>
-  <p>A lightweight native macOS screen translator that stays out of your way.</p>
+  <p><strong>看不懂的英文，框一下就懂。</strong></p>
+  <p>按下 <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>T</kbd>，框选屏幕上的英文，中文就在原位置附近出现。</p>
 
   <p>
-    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest"><img src="https://img.shields.io/github/v/release/aaabbssbaishuo-code/yingjian-macos?display_name=tag&label=Release" alt="Latest Release"></a>
+    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest"><img src="https://img.shields.io/github/v/release/aaabbssbaishuo-code/yingjian-macos?display_name=tag&label=下载" alt="下载最新公开版"></a>
     <img src="https://img.shields.io/badge/macOS-15%2B-111111?logo=apple" alt="macOS 15+">
-    <img src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white" alt="Swift 6">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2F80ED" alt="MIT License"></a>
-    <img src="https://img.shields.io/badge/Account-Not%20Required-18A558" alt="No account required">
+    <img src="https://img.shields.io/badge/Apple%20Silicon-支持-111111?logo=apple" alt="支持 Apple Silicon">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/开源-MIT-2F80ED" alt="MIT License"></a>
+  </p>
+
+  <p>
+    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest"><strong>下载安装包</strong></a>
+    ·
+    <a href="#从源码构建">从源码构建</a>
   </p>
 </div>
 
-> 按下 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>，框选任意英文界面。英见会识别文字、翻译成简体中文，并在原位置附近显示一个轻量浮层。
+## 它解决的不是翻译，是“看得见却拿不到”
 
-英见不是一个需要切换过去使用的大窗口翻译软件。它常驻菜单栏，只在你遇到看不懂的英文时出现，用完即走。
+软件按钮、系统弹窗、图片文字不能复制。鼠标一移开，hover 提示和临时气泡就消失。为了看懂一句英文，还要截图、保存、打开翻译网站，再切回原来的工作。
 
-## 为什么需要英见
-
-很多英文并不能被正常选中和复制：
-
-| 遇到的问题 | 英见的处理方式 |
-| --- | --- |
-| 软件按钮、系统弹窗、图片文字无法选中 | 通过 Vision OCR 直接识别屏幕内容 |
-| 鼠标移开后，hover 提示和临时气泡立刻消失 | 触发快捷键时先冻结屏幕，再在冻结画面上框选 |
-| 右键菜单一打开截图工具就关闭 | 保留触发瞬间的菜单画面，不依赖菜单继续存活 |
-| 为一句话切换到翻译网站会打断工作 | 在原英文区域附近直接显示翻译卡片 |
-| 多段文字被合并成难读的一大段 | 按阅读顺序识别并保留段落结构 |
-| 担心截图和翻译内容被长期保存 | 不做历史记录，不保存截图、OCR 原文或译文 |
-
-## 30 秒了解工作流
+英见把这件事缩短成三步：
 
 ```text
-打开英文界面或 hover 提示
-            ↓
-      按下 ⌘ ⇧ T
-            ↓
-   屏幕定格，拖拽框选英文
-            ↓
- Vision OCR 识别并按段落整理
-            ↓
- Apple Translation 英译简中
-            ↓
- 在选区附近显示双语翻译浮层
+按下 ⌘ ⇧ T  →  拖拽框选英文  →  在原位置附近看中文
 ```
 
-整个过程不需要打开主窗口，也不需要先复制英文。
+不用复制，不用上传图片，不用离开当前应用。
 
-## 核心体验
+## 连会消失的英文，也能留下来翻译
 
-### 定格 hover、菜单和临时弹层
+普通截图工具出现时，鼠标已经离开原位置，hover、右键菜单和临时弹层也随之消失。
 
-英见会在截图模式出现前捕获当前显示器画面。即使底层应用随后收到了鼠标离开事件，触发瞬间看到的 hover 提示、右键菜单和临时气泡仍会留在冻结画面中，用户可以继续框选。这也是它与普通透明遮罩截图方式最重要的区别。
+英见会先冻结你触发快捷键那一刻的屏幕，再让你框选。眼前的菜单、提示和弹层会留在冻结画面中，直到你完成选择。
 
-### 原生 OCR 与分段翻译
+这意味着你可以直接翻译：
 
-- 使用 Apple Vision Framework，优先识别英文
-- 支持单词、短句、按钮、菜单、弹窗和多行段落
-- 根据位置和间距恢复阅读顺序
-- 保留列表项和段落边界，逐段展示中文与英文
-- OCR 为空时不会发起翻译
+- Figma、开发工具和专业软件里的 hover 提示
+- 右键菜单、系统弹窗和错误信息
+- 网页图片、视频画面和无法复制的文字
 
-### 就地浮层，不打断当前任务
+## 翻译就在眼前，用完即走
 
-- 浮层优先显示在选区下方，空间不足时自动换位
-- 自动避让屏幕边缘，支持多显示器
-- 中文译文醒目展示，英文原文弱化但始终可见
-- 可手动选择英文文本并复制，也可一键复制全部英文
-- 鼠标停留时不会消失，离开后延时淡出
+识别完成后，英见不会打开一个新窗口。中文会显示在选区附近，英文原文保留在下方，方便核对。
 
-### 朗读与跟读
+- 自动保留段落和阅读顺序
+- 支持选择并复制英文，也可以一键复制全部原文
+- 支持朗读、暂停和逐词高亮，单击单词即可听发音
+- 浮层自动避让屏幕边缘，并支持多显示器
 
-- 朗读英文原文，支持暂停和继续
-- 多段内容按段落依次播放
-- 当前朗读单词会同步高亮
-- 单击任意英文单词，可单独听该单词发音
+## 你的内容留在这台 Mac
 
-### 轻量且私密
+英见没有账号、云同步和历史记录，也没有自己的翻译服务器。
 
-- 菜单栏常驻，不显示 Dock 图标
-- 默认开机启动，可在菜单栏关闭
-- 无账号、无历史记录、无云同步
-- 截图和文字仅用于当前一次识别与翻译
-
-## 适合这些场景
-
-- 阅读英文软件的按钮、菜单、设置项和错误提示
-- 查看网页中的图片文字或不可复制区域
-- 翻译 Figma、开发工具和专业软件里的 hover 提示
-- 理解 macOS 系统弹窗、上下文菜单和临时气泡
-- 阅读多段英文说明，并通过逐词高亮辅助跟读
-
-## 安装
-
-### 普通用户
-
-1. 打开 [最新版本下载页](https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest)。
-2. 在 **Assets** 中下载 `yingjian-版本号.pkg`。如果浏览器下载的是 `.pkg.zip`，请先双击解压。
-3. 右键点击解压得到的 `.pkg`，选择“打开”，然后按安装器提示继续。
-4. 安装器会把英见放入 `/Applications`，安装完成后自动启动。
-5. 屏幕顶部菜单栏出现英见图标，即表示启动成功。
-
-不要下载 GitHub 自动生成的 `Source code (zip)` 或 `Source code (tar.gz)`，它们是工程源码，不是安装包。
-
-> 当前公开构建尚未经过 Apple Developer ID 公证，因此 macOS 可能提示“无法验证开发者”。这是 Gatekeeper 对未公证开源构建的正常提示；请确认下载来源是本仓库，再通过“右键 `.pkg` → 打开”启动安装器。
-
-### 首次启动
-
-英见会轻量检查以下项目：
-
-1. **屏幕与系统音频录制权限**：用于读取你主动框选的屏幕区域。
-2. **辅助功能权限**：用于可靠监听全局快捷键。
-3. **英语与简体中文翻译语言包**：首次使用时，macOS 可能需要联网下载。
-
-权限路径：`系统设置 → 隐私与安全性 → 屏幕与系统音频录制 / 辅助功能`。
-
-授权后如果快捷键仍未生效，请完全退出英见并重新打开。建议始终从“应用程序”文件夹运行，避免 macOS 将不同路径下的副本视为不同应用。
-
-## 使用方法
-
-1. 将鼠标停在想翻译的英文界面上；hover 提示或右键菜单可以保持打开。
-2. 按 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>。
-3. 屏幕定格后拖拽选择英文区域，松开鼠标即自动确认。
-4. 等待 OCR 与翻译完成，结果会显示在选区附近。
-5. 点击喇叭朗读英文，点击复制按钮复制英文，点击关闭按钮收起浮层。
-
-按 <kbd>Esc</kbd> 可以随时取消截图。
-
-## 隐私说明
-
-| 数据 | 英见如何处理 |
+| 数据 | 处理方式 |
 | --- | --- |
-| 截图 | 仅在内存中用于本次 OCR，完成后释放，不写入文件 |
-| OCR 英文原文 | 不保存，不建立历史记录 |
-| 中文翻译结果 | 不保存，不同步到其他设备 |
-| 用户身份 | 不需要账号，不收集登录信息 |
-| 翻译 | 使用 Apple Translation Framework；语言包准备完成后由系统翻译能力处理 |
+| 屏幕截图 | 只在内存中用于本次识别，完成后释放，不写入文件 |
+| 英文识别 | 使用 Apple Vision 在设备端完成 |
+| 中文翻译 | 使用 Apple Translation；语言模型下载后由系统处理 |
+| 原文与译文 | 不保存，不建立历史记录，不同步到其他设备 |
 
-英见没有自己的翻译服务器。首次下载系统语言包时可能需要网络连接。
+首次使用时，macOS 可能需要联网下载英语和简体中文翻译语言包。
 
-## 系统要求
+## 下载与安装
+
+### 系统要求
 
 - macOS 15 Sequoia 或更高版本
 - 当前公开安装包支持 Apple Silicon Mac
-- Intel Mac 可从源码构建，实际可用性取决于设备能否运行 macOS 15
-- 首次使用需要安装英语与简体中文翻译语言包
+- 当前版本支持 **英文 → 简体中文**
 
-当前版本固定支持 **英文 → 简体中文**。
+> [!IMPORTANT]
+> 当前公开安装包为 `v0.1.3`。主分支中的“冻结 hover、菜单和临时弹层”等最新改进尚未进入该安装包；要体验 README 描述的完整最新功能，请先[从源码构建](#从源码构建)。
 
-## 原生技术栈
+### 安装公开版
+
+1. 打开[最新版本下载页](https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest)。
+2. 在 **Assets** 中下载 `yingjian-版本号.pkg`。如果浏览器下载的是 `.pkg.zip`，请先双击解压。
+3. 右键点击 `.pkg`，选择“打开”，然后按安装器提示继续。
+4. 安装完成后，屏幕顶部菜单栏出现英见图标，即表示启动成功。
+
+不要下载 GitHub 自动生成的 `Source code (zip)` 或 `Source code (tar.gz)`，它们是工程源码，不是安装包。
+
+当前公开构建尚未经过 Apple Developer ID 公证。如果 macOS 提示“无法验证开发者”，请确认下载来源是本仓库，再通过“右键 `.pkg` → 打开”启动安装器。
+
+### 首次启动
+
+英见需要两项系统权限：
+
+1. **屏幕与系统音频录制**：只读取你主动框选的屏幕区域。
+2. **辅助功能**：用于可靠监听全局快捷键。
+
+权限路径：`系统设置 → 隐私与安全性 → 屏幕与系统音频录制 / 辅助功能`。
+
+授权后如果快捷键没有生效，请完全退出英见并重新打开。建议始终从“应用程序”文件夹运行，避免 macOS 将不同路径下的副本视为不同应用。
+
+## 使用方法
+
+1. 停留在想看懂的英文界面上，hover 提示或右键菜单可以保持打开。
+2. 按下 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>。
+3. 屏幕定格后，拖拽框选英文区域，松开鼠标即自动确认。
+4. 中文会显示在选区附近。点击喇叭朗读，点击复制按钮复制原文。
+
+按 <kbd>Esc</kbd> 可以随时取消。
+
+## 常见问题
+
+<details>
+<summary><strong>为什么必须开启屏幕录制权限？</strong></summary>
+<br>
+macOS 将读取屏幕像素的行为统一放在这项权限下。英见只在你触发截图翻译时获取一次静态画面，不会持续录屏。
+</details>
+
+<details>
+<summary><strong>英见会上传或保存我的截图吗？</strong></summary>
+<br>
+不会。截图只在内存中用于本次 OCR，完成后释放；原文和译文也不会写入历史记录。
+</details>
+
+<details>
+<summary><strong>为什么第一次翻译会下载语言？</strong></summary>
+<br>
+Apple Translation 需要先准备英语和简体中文语言模型。下载完成后，后续翻译由系统能力处理。
+</details>
+
+<details>
+<summary><strong>为什么框选时，真实应用里的 hover 提示已经消失了？</strong></summary>
+<br>
+这是预期行为。英见在快捷键触发瞬间冻结了屏幕；你框选的是冻结副本，所以触发瞬间看到的提示仍然可以被识别。
+</details>
+
+## 给开发者
+
+<details>
+<summary><strong>原生技术栈</strong></summary>
+<br>
 
 | 能力 | Apple 原生技术 |
 | --- | --- |
@@ -161,9 +147,10 @@
 | 英文朗读 | NSSpeechSynthesizer |
 | 开机启动 | SMAppService |
 
-不使用 Electron，也不引入大型前端框架。
+英见不使用 Electron，也不引入大型前端框架。
+</details>
 
-## 从源码构建
+### 从源码构建
 
 需要 macOS 15+、Swift 6 工具链，推荐使用完整 Xcode。
 
@@ -186,43 +173,28 @@ open .build/dist
 
 也可以直接使用 Xcode 打开 `Package.swift`。
 
-## 项目结构
+<details>
+<summary><strong>项目结构</strong></summary>
+<br>
 
 ```text
 Sources/QuickLensTranslator/
-├── AppDelegate.swift                 # App 生命周期与服务装配
-├── MenuBarController.swift           # 菜单栏入口
-├── HotKeyManager.swift               # 全局快捷键
-├── ScreenshotOverlayWindow.swift     # 冻结画面与框选交互
-├── ScreenCaptureService.swift        # ScreenCaptureKit 捕获
-├── OCRService.swift                  # Vision OCR 与段落整理
-├── TranslationService.swift          # 英译简中与界面语境优化
-├── FloatingTranslationPanel.swift    # 双语翻译浮层
-├── SpeechService.swift               # 朗读、暂停与逐词高亮
-├── LoginItemService.swift            # 开机启动
-└── PermissionManager.swift           # 权限检测与系统设置入口
+├── AppDelegate.swift
+├── CaptureCoordinator.swift
+├── FloatingTranslationPanel.swift
+├── HotKeyManager.swift
+├── LaunchGuideService.swift
+├── MenuBarController.swift
+├── OCRService.swift
+├── PermissionManager.swift
+├── ScreenCaptureService.swift
+├── ScreenshotOverlayWindow.swift
+├── SpeechService.swift
+└── TranslationService.swift
 ```
+</details>
 
-## 常见问题
+## 开源许可
 
-**为什么必须开启屏幕录制权限？**<br>
-macOS 将所有读取屏幕像素的行为统一放在这项权限下。英见只读取用户主动框选的区域，不会持续录屏。
+英见采用 [MIT License](LICENSE)。
 
-**英见会一直共享或录制我的屏幕吗？**<br>
-不会。英见只在你触发截图翻译时获取一次静态画面，完成后立即释放，不启动持续录屏流。
-
-**为什么第一次翻译会下载语言？**<br>
-Apple Translation 需要在设备上准备英语和简体中文语言包。下载完成后，后续使用会更快。
-
-**为什么 hover 提示在真实应用里消失了，但框选画面里还在？**<br>
-这是预期行为。英见在快捷键触发瞬间冻结画面，框选时操作的是冻结副本，因此临时界面仍然可识别。
-
-## 品牌与宣传素材
-
-- 英文副品牌：**YingSee**
-- 英文标语：**See it. Translate it.**
-- GitHub 宣传图生成说明：[PROMO_IMAGE_PROMPT.md](docs/PROMO_IMAGE_PROMPT.md)
-
-## 许可证
-
-本项目采用 [MIT License](LICENSE)。
