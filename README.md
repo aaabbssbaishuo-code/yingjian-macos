@@ -18,8 +18,9 @@
   <p>
     <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest/download/yingjian-latest.pkg"><strong>下载安装包</strong></a>
     ·
-    <a href="#从源码构建">从源码构建</a>
+    <a href="#安装公开版">安装帮助</a>
   </p>
+  <p><sub>首次安装提示：如果 macOS 显示“Apple 无法验证”，请点击“完成”，再到“下载”文件夹右键安装包并选择“打开”。</sub></p>
 </div>
 
 ## 它解决的不只是翻译，而是“看得见却拿不到”
