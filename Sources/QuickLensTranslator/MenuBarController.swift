@@ -6,7 +6,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let loginItemService: LoginItemService
     private let onStartCapture: () -> Void
+    private let onPauseShortcut: () -> Void
+    private let onResumeShortcut: () throws -> Void
+    private let onUpdateShortcut: (HotKeyShortcut) throws -> Void
     private let onQuit: () -> Void
+    private var shortcut: HotKeyShortcut
+    private lazy var shortcutItem = NSMenuItem(
+        title: shortcutItemTitle,
+        action: #selector(showShortcutSettings),
+        keyEquivalent: ""
+    )
     private lazy var loginItem = NSMenuItem(
         title: "开机自动启动",
         action: #selector(toggleLoginItem),
@@ -15,11 +24,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     init(
         loginItemService: LoginItemService,
+        shortcut: HotKeyShortcut,
         onStartCapture: @escaping () -> Void,
+        onPauseShortcut: @escaping () -> Void,
+        onResumeShortcut: @escaping () throws -> Void,
+        onUpdateShortcut: @escaping (HotKeyShortcut) throws -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.loginItemService = loginItemService
+        self.shortcut = shortcut
         self.onStartCapture = onStartCapture
+        self.onPauseShortcut = onPauseShortcut
+        self.onResumeShortcut = onResumeShortcut
+        self.onUpdateShortcut = onUpdateShortcut
         self.onQuit = onQuit
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
@@ -46,12 +63,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         startItem.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: nil)
         menu.addItem(startItem)
 
-        let shortcutItem = NSMenuItem(
-            title: "快捷键：Command + Shift + T",
-            action: nil,
-            keyEquivalent: ""
-        )
-        shortcutItem.isEnabled = false
+        shortcutItem.target = self
+        shortcutItem.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
         menu.addItem(shortcutItem)
 
         menu.addItem(.separator())
@@ -85,6 +98,34 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         onStartCapture()
     }
 
+    @objc private func showShortcutSettings() {
+        onPauseShortcut()
+        let result = ShortcutRecorder.run(currentShortcut: shortcut)
+        let newShortcut: HotKeyShortcut
+
+        switch result {
+        case let .save(recordedShortcut):
+            newShortcut = recordedShortcut
+        case .restoreDefault:
+            newShortcut = .default
+        case .cancel:
+            try? onResumeShortcut()
+            return
+        }
+
+        do {
+            try onUpdateShortcut(newShortcut)
+            shortcut = newShortcut
+            shortcutItem.title = shortcutItemTitle
+            ToastPresenter.show(message: "快捷键已设为 \(newShortcut.displayName)")
+        } catch {
+            AlertPresenter.show(
+                title: "无法使用这个快捷键",
+                message: "这个组合键可能已被其他应用占用。原来的快捷键仍然有效，请换一个组合后重试。"
+            )
+        }
+    }
+
     @objc private func showPrivacy() {
         AlertPresenter.show(
             title: "隐私说明",
@@ -111,5 +152,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func updateLoginItemState() {
         loginItem.state = loginItemService.isEnabled ? .on : .off
+    }
+
+    private var shortcutItemTitle: String {
+        "设置快捷键…（当前 \(shortcut.displayName)）"
     }
 }

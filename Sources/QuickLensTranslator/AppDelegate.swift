@@ -13,8 +13,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menuBarController = MenuBarController(
             loginItemService: loginItemService,
+            shortcut: hotKeyManager.shortcut,
             onStartCapture: { [weak self] in
                 self?.startCapture()
+            },
+            onPauseShortcut: { [weak self] in
+                self?.hotKeyManager.unregister()
+            },
+            onResumeShortcut: { [weak self] in
+                guard let self else { return }
+                try self.hotKeyManager.registerCurrentHotKey()
+            },
+            onUpdateShortcut: { [weak self] shortcut in
+                guard let self else { return }
+                try self.hotKeyManager.updateShortcut(shortcut)
             },
             onQuit: {
                 NSApplication.shared.terminate(nil)
@@ -26,11 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            try hotKeyManager.registerDefaultHotKey()
+            try hotKeyManager.registerCurrentHotKey()
         } catch {
             AlertPresenter.show(
                 title: "快捷键注册失败",
-                message: "Command + Shift + T 已被其他应用占用，请退出冲突应用后重试。"
+                message: "无法注册 \(hotKeyManager.shortcut.displayName)。请从菜单栏为英见设置另一个快捷键。"
             )
         }
 
