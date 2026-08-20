@@ -9,14 +9,14 @@
   <p>按下快捷键，框选屏幕上的英文，中文就在原位置附近出现。默认快捷键为 <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>T</kbd>。</p>
 
   <p>
-    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest"><img src="https://img.shields.io/github/v/release/aaabbssbaishuo-code/yingjian-macos?display_name=tag&label=下载" alt="下载最新公开版"></a>
+    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest/download/yingjian-latest.pkg"><img src="https://img.shields.io/github/v/release/aaabbssbaishuo-code/yingjian-macos?display_name=tag&label=下载" alt="下载最新公开版"></a>
     <img src="https://img.shields.io/badge/macOS-15%2B-111111?logo=apple" alt="macOS 15+">
     <img src="https://img.shields.io/badge/Apple%20Silicon-支持-111111?logo=apple" alt="支持 Apple Silicon">
     <a href="LICENSE"><img src="https://img.shields.io/badge/开源-MIT-2F80ED" alt="MIT License"></a>
   </p>
 
   <p>
-    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest"><strong>下载安装包</strong></a>
+    <a href="https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest/download/yingjian-latest.pkg"><strong>下载安装包</strong></a>
     ·
     <a href="#从源码构建">从源码构建</a>
   </p>
@@ -81,14 +81,16 @@
 
 ### 安装公开版
 
-1. 打开[最新版本下载页](https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest)。
-2. 在 **Assets** 中下载 `yingjian-版本号.pkg`。如果浏览器下载的是 `.pkg.zip`，请先双击解压。
-3. 右键点击 `.pkg`，选择“打开”，然后按安装器提示继续。
-4. 安装完成后，屏幕顶部菜单栏出现英见图标，即表示启动成功。
+1. 点击[直接下载最新安装包](https://github.com/aaabbssbaishuo-code/yingjian-macos/releases/latest/download/yingjian-latest.pkg)，浏览器会立即下载 `.pkg` 文件。
+2. 下载完成后，右键点击 `yingjian-latest.pkg`，选择“打开”。
+3. 按安装器提示继续，英见会自动安装到“应用程序”文件夹并启动。
+4. 屏幕顶部菜单栏出现英见图标，即表示启动成功。
 
 不要下载 GitHub 自动生成的 `Source code (zip)` 或 `Source code (tar.gz)`，它们是工程源码，不是安装包。
 
 当前公开构建尚未经过 Apple Developer ID 公证。如果 macOS 提示“无法验证开发者”，请确认下载来源是本仓库，再通过“右键 `.pkg` → 打开”启动安装器。
+
+具体操作：先点击提示中的“完成”，再到“下载”文件夹中右键点击 `yingjian-latest.pkg`，选择“打开”并再次确认。
 
 ### 首次启动
 
@@ -180,6 +182,28 @@ open .build/英见.app
 ./Scripts/build-pkg.sh
 open .build/dist
 ```
+
+### 签名与 Apple 公证
+
+面向普通用户公开分发时，需要 Apple Developer Program 提供的 `Developer ID Application` 和 `Developer ID Installer` 证书。先把公证凭据保存到钥匙串：
+
+```bash
+xcrun notarytool store-credentials yingjian-notary \
+  --apple-id "你的 Apple ID" \
+  --team-id "你的 Team ID" \
+  --password "App 专用密码"
+```
+
+设置证书名称并生成已签名、公证和附加票据的安装包：
+
+```bash
+export DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)"
+export DEVELOPER_ID_INSTALLER="Developer ID Installer: Your Name (TEAMID)"
+export NOTARY_KEYCHAIN_PROFILE="yingjian-notary"
+./Scripts/build-notarized-release.sh
+```
+
+脚本只有在签名、公证、票据附加和 Gatekeeper 检查全部通过后才会完成，并同时输出带版本号的安装包与稳定直链使用的 `yingjian-latest.pkg`。
 
 也可以直接使用 Xcode 打开 `Package.swift`。
 
