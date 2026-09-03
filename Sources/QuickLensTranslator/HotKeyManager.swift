@@ -3,32 +3,52 @@ import Foundation
 import ApplicationServices
 
 enum HotKeyError: Error {
-    case eventTapInstallationFailed
     case eventHandlerInstallationFailed(OSStatus)
     case registrationFailed(OSStatus)
+}
+
+extension HotKeyError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .eventHandlerInstallationFailed:
+            return "系统无法启动快捷键监听，请稍后重试。"
+        case .registrationFailed:
+            return "该快捷键可能已被系统或其他应用占用，请换一个组合。"
+        }
+    }
 }
 
 @MainActor
 final class HotKeyManager {
     var onHotKey: (() -> Void)?
+    var isSuspended = false
 
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
+    private var activeShortcut: KeyboardShortcut?
     private let hotKeyID = EventHotKeyID(
         signature: OSType(UInt32(ascii: "QLTR")),
         id: 1
     )
 
-    func registerDefaultHotKey() throws {
+    func register(_ shortcut: KeyboardShortcut) throws {
         unregister()
 
-        if installEventTap() {
-            return
-        }
+        do {
+            try ensureShortcutIsAvailable(shortcut)
+            activeShortcut = shortcut
 
-        try registerCarbonHotKey()
+            if installEventTap() {
+                return
+            }
+
+            try registerCarbonHotKey(shortcut)
+        } catch {
+            unregister()
+            throw error
+        }
     }
 
     private func installEventTap() -> Bool {
@@ -58,7 +78,9 @@ final class HotKeyManager {
                 }
 
                 guard type == .keyDown,
-                      manager.isDefaultShortcut(event) else {
+                      !manager.isSuspended,
+                      let shortcut = manager.activeShortcut,
+                      shortcut.matches(event) else {
                     return Unmanaged.passUnretained(event)
                 }
 
@@ -88,7 +110,28 @@ final class HotKeyManager {
         return true
     }
 
-    private func registerCarbonHotKey() throws {
+    private func ensureShortcutIsAvailable(_ shortcut: KeyboardShortcut) throws {
+        var temporaryRef: EventHotKeyRef?
+        let temporaryID = EventHotKeyID(
+            signature: hotKeyID.signature,
+            id: 999
+        )
+        let status = RegisterEventHotKey(
+            UInt32(shortcut.keyCode),
+            shortcut.carbonModifiers,
+            temporaryID,
+            GetApplicationEventTarget(),
+            0,
+            &temporaryRef
+        )
+
+        guard status == noErr, let temporaryRef else {
+            throw HotKeyError.registrationFailed(status)
+        }
+        UnregisterEventHotKey(temporaryRef)
+    }
+
+    private func registerCarbonHotKey(_ shortcut: KeyboardShortcut) throws {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -120,7 +163,8 @@ final class HotKeyManager {
                     .takeUnretainedValue()
 
                 guard pressedID.signature == manager.hotKeyID.signature,
-                      pressedID.id == manager.hotKeyID.id else {
+                      pressedID.id == manager.hotKeyID.id,
+                      !manager.isSuspended else {
                     return OSStatus(eventNotHandledErr)
                 }
 
@@ -139,10 +183,9 @@ final class HotKeyManager {
             throw HotKeyError.eventHandlerInstallationFailed(handlerStatus)
         }
 
-        let modifiers = UInt32(cmdKey | shiftKey)
         let registrationStatus = RegisterEventHotKey(
-            UInt32(kVK_ANSI_T),
-            modifiers,
+            UInt32(shortcut.keyCode),
+            shortcut.carbonModifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
@@ -153,17 +196,6 @@ final class HotKeyManager {
             unregister()
             throw HotKeyError.registrationFailed(registrationStatus)
         }
-    }
-
-    private func isDefaultShortcut(_ event: CGEvent) -> Bool {
-        let keyCode = UInt32(event.getIntegerValueField(.keyboardEventKeycode))
-        guard keyCode == UInt32(kVK_ANSI_T) else { return false }
-
-        let flags = event.flags
-        return flags.contains(.maskCommand)
-            && flags.contains(.maskShift)
-            && !flags.contains(.maskAlternate)
-            && !flags.contains(.maskControl)
     }
 
     func unregister() {
@@ -186,6 +218,8 @@ final class HotKeyManager {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
+
+        activeShortcut = nil
     }
 }
 

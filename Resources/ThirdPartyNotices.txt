@@ -1,0 +1,17 @@
+Third-Party Notices
+===================
+
+sherpa-onnx
+------------
+Copyright 2023-2026 Xiaomi Corporation and sherpa-onnx contributors.
+Licensed under the Apache License, Version 2.0.
+https://github.com/k2-fsa/sherpa-onnx
+
+Kokoro-82M
+-----------
+Kokoro-82M model weights by hexgrad.
+Licensed under the Apache License, Version 2.0.
+https://huggingface.co/hexgrad/Kokoro-82M
+
+Apache License 2.0:
+https://www.apache.org/licenses/LICENSE-2.0

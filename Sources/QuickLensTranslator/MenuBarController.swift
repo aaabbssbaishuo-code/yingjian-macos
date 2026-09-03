@@ -6,20 +6,29 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let loginItemService: LoginItemService
     private let onStartCapture: () -> Void
+    private let onOpenSettings: () -> Void
     private let onQuit: () -> Void
     private lazy var loginItem = NSMenuItem(
         title: "开机自动启动",
         action: #selector(toggleLoginItem),
         keyEquivalent: ""
     )
+    private lazy var shortcutItem = NSMenuItem(
+        title: "",
+        action: #selector(openSettings),
+        keyEquivalent: ""
+    )
 
     init(
         loginItemService: LoginItemService,
+        shortcut: KeyboardShortcut,
         onStartCapture: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.loginItemService = loginItemService
         self.onStartCapture = onStartCapture
+        self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
@@ -32,11 +41,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.toolTip = "英见"
         }
 
-        configureMenu()
+        configureMenu(shortcut: shortcut)
         statusItem.menu = menu
     }
 
-    private func configureMenu() {
+    private func configureMenu(shortcut: KeyboardShortcut) {
         let startItem = NSMenuItem(
             title: "开始截图翻译",
             action: #selector(startCapture),
@@ -46,13 +55,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         startItem.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: nil)
         menu.addItem(startItem)
 
-        let shortcutItem = NSMenuItem(
-            title: "快捷键：Command + Shift + T",
-            action: nil,
-            keyEquivalent: ""
-        )
-        shortcutItem.isEnabled = false
+        shortcutItem.target = self
+        shortcutItem.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
         menu.addItem(shortcutItem)
+        updateShortcut(shortcut)
 
         menu.addItem(.separator())
 
@@ -92,6 +98,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
     }
 
+    @objc private func openSettings() {
+        onOpenSettings()
+    }
+
     @objc private func toggleLoginItem() {
         do {
             try loginItemService.setEnabled(!loginItemService.isEnabled)
@@ -111,5 +121,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func updateLoginItemState() {
         loginItem.state = loginItemService.isEnabled ? .on : .off
+    }
+
+    func updateShortcut(_ shortcut: KeyboardShortcut) {
+        shortcutItem.title = "设置快捷键…   \(shortcut.displayString)"
+        shortcutItem.toolTip = "当前快捷键：\(shortcut.accessibilityDescription)"
     }
 }
