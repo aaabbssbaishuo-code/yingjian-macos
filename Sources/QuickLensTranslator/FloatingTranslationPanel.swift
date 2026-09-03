@@ -5,7 +5,11 @@ import Translation
 
 @MainActor
 final class FloatingTranslationPanel: NSPanel {
-    private let speechService = SpeechService()
+    private let speechService = SpeechService(
+        settingsStore: .standard,
+        voicePackManager: .standard
+    )
+    private let onOpenSettings: () -> Void
     private var dismissTask: Task<Void, Never>?
     private var outsideClickMonitor: Any?
     private var cardModel: TranslationCardModel?
@@ -16,7 +20,8 @@ final class FloatingTranslationPanel: NSPanel {
     private let transitionDuration: TimeInterval = 0.18
     private let panelWidth: CGFloat = 440
 
-    init() {
+    init(onOpenSettings: @escaping () -> Void) {
+        self.onOpenSettings = onOpenSettings
         super.init(
             contentRect: CGRect(x: 0, y: 0, width: 440, height: 176),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -51,6 +56,10 @@ final class FloatingTranslationPanel: NSPanel {
         speechService.onActiveWordRangeChanged = { [weak model] paragraphIndex, range in
             model?.setActiveSpeechWord(paragraphIndex: paragraphIndex, range: range)
         }
+        speechService.onError = { message in
+            ToastPresenter.show(message: message)
+        }
+        speechService.prepareNaturalVoiceIfNeeded(paragraphs: paragraphs)
 
         currentSelection = selection
         currentScreen = screen
@@ -69,6 +78,9 @@ final class FloatingTranslationPanel: NSPanel {
                     model.fullEnglishText,
                     successMessage: "已复制英文原文"
                 )
+            },
+            onSettings: { [weak self] in
+                self?.openSettings()
             },
             onClose: { [weak self] in
                 self?.dismiss()
@@ -90,7 +102,7 @@ final class FloatingTranslationPanel: NSPanel {
         )
         applyPanelSize(panelSize, selection: selection, screen: screen, animated: false)
 
-        let hostingView = NSHostingView(rootView: rootView)
+        let hostingView = InteractivePanelHostingView(rootView: rootView)
         hostingView.frame = CGRect(origin: .zero, size: panelSize)
         contentView = hostingView
         self.hostingView = hostingView
@@ -115,9 +127,11 @@ final class FloatingTranslationPanel: NSPanel {
         dismissTask?.cancel()
         removeOutsideClickMonitor()
         speechService.stop()
+        speechService.releaseNaturalResources()
         speechService.onStateChanged = nil
         speechService.onActiveParagraphChanged = nil
         speechService.onActiveWordRangeChanged = nil
+        speechService.onError = nil
         cardModel = nil
         hostingView = nil
         currentSelection = nil
@@ -135,6 +149,7 @@ final class FloatingTranslationPanel: NSPanel {
     }
 
     private func toggleSpeech(_ paragraphs: [String]) {
+        dismissTask?.cancel()
         if !speechService.toggle(paragraphs: paragraphs) {
             ToastPresenter.show(message: "朗读失败，请稍后重试。")
         }
@@ -163,6 +178,11 @@ final class FloatingTranslationPanel: NSPanel {
         } else {
             ToastPresenter.show(message: "复制失败，请稍后重试")
         }
+    }
+
+    private func openSettings() {
+        dismiss()
+        onOpenSettings()
     }
 
     private func handleHover(_ hovering: Bool) {
@@ -245,6 +265,12 @@ final class FloatingTranslationPanel: NSPanel {
     }
 }
 
+private final class InteractivePanelHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
 @MainActor
 private final class TranslationCardModel: ObservableObject {
     enum State {
@@ -286,6 +312,10 @@ private final class TranslationCardModel: ObservableObject {
 
     var isSpeaking: Bool {
         speechState == .speaking
+    }
+
+    var isPreparingSpeech: Bool {
+        speechState == .preparing
     }
 
     var isPaused: Bool {
@@ -355,6 +385,7 @@ private struct TranslationCardView: View {
     let onSpeak: () -> Void
     let onSpeakWord: (String, Int, NSRange) -> Void
     let onCopyEnglish: () -> Void
+    let onSettings: () -> Void
     let onClose: () -> Void
     let onHover: (Bool) -> Void
     let onTranslationFinished: () -> Void
@@ -443,10 +474,21 @@ private struct TranslationCardView: View {
                 Button {
                     onSpeak()
                 } label: {
-                    Image(systemName: model.isPaused ? "play.fill" : (model.isSpeaking ? "pause.fill" : "speaker.wave.2"))
+                    if model.isPreparingSpeech {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: model.isPaused ? "play.fill" : (model.isSpeaking ? "pause.fill" : "speaker.wave.2"))
+                    }
                 }
-                .buttonStyle(PanelIconButtonStyle(isActive: model.isSpeaking || model.isPaused))
-                .help(model.isPaused ? "继续朗读" : (model.isSpeaking ? "暂停朗读" : "朗读英文"))
+                .buttonStyle(PanelIconButtonStyle(
+                    isActive: model.isPreparingSpeech || model.isSpeaking || model.isPaused
+                ))
+                .help(
+                    model.isPreparingSpeech
+                        ? "正在准备自然语音，点击取消"
+                        : (model.isPaused ? "继续朗读" : (model.isSpeaking ? "暂停朗读" : "朗读英文"))
+                )
 
                 Button(action: onCopyEnglish) {
                     Image(systemName: "doc.on.doc")
@@ -457,9 +499,11 @@ private struct TranslationCardView: View {
 
                 Spacer()
 
-                Text(statusText)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.tertiary)
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(PanelIconButtonStyle())
+                .help("设置")
             }
         }
         .padding(16)
@@ -556,18 +600,6 @@ private struct TranslationCardView: View {
         }
     }
 
-    private var statusText: String {
-        switch model.state {
-        case .translating:
-            return "Apple Translation"
-        case .translated:
-            return model.paragraphs.count == 1
-                ? "已在设备上翻译"
-                : "已翻译 \(model.paragraphs.count) 段英文"
-        case .failed:
-            return "Translation unavailable"
-        }
-    }
 }
 
 private struct TranslationParagraphRow: View {

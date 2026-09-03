@@ -6,9 +6,13 @@ final class CaptureCoordinator {
     private let overlayController = ScreenshotOverlayController()
     private let screenCaptureService = ScreenCaptureService()
     private let ocrService = OCRService()
-    private let floatingPanel = FloatingTranslationPanel()
+    private let floatingPanel: FloatingTranslationPanel
 
     private(set) var isCapturing = false
+
+    init(onOpenSettings: @escaping () -> Void) {
+        floatingPanel = FloatingTranslationPanel(onOpenSettings: onOpenSettings)
+    }
 
     func start() {
         guard !isCapturing else { return }

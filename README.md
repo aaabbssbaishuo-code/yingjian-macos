@@ -115,6 +115,12 @@
 
 按 <kbd>Esc</kbd> 可以随时取消。
 
+### 自然语音与等待时间
+
+自然语音在本机生成。框选时会提前预热模型，浮层出现后提前准备开头的音频；同一浮层内重复播放会复用已生成的片段，设置页试听也会复用当前声音和语速对应的音频。
+
+音频只保存在当前页面的内存中（最多 16 MB、64 个片段），关闭页面即清除，不写入文件或历史记录。模型在最后一次使用后保留 90 秒，空闲后自动卸载。首次使用、新文本或刚切换声音时仍可能短暂等待；长句保留预缓冲，以减少播放中断。
+
 ### 自定义快捷键
 
 打开菜单栏中的英见，选择“设置快捷键…”，然后直接按下你习惯的组合键并保存。设置会自动保留，下次启动仍然有效；也可以随时恢复默认的 <kbd>Command</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd>。
@@ -157,7 +163,7 @@ Apple Translation 需要先准备英语和简体中文语言模型。下载完�
 | 屏幕冻结与区域捕获 | ScreenCaptureKit |
 | 英文文字识别 | Vision OCR |
 | 英译简中 | Translation Framework |
-| 英文朗读 | NSSpeechSynthesizer |
+| 英文朗读与播放 | AVSpeechSynthesizer、AVAudioEngine；可选本地 Kokoro 自然语音 |
 | 开机启动 | SMAppService |
 
 英见不使用 Electron，也不引入大型前端框架。
@@ -224,7 +230,7 @@ Sources/QuickLensTranslator/
 ├── PermissionManager.swift
 ├── ScreenCaptureService.swift
 ├── ScreenshotOverlayWindow.swift
-├── ShortcutRecorder.swift
+├── ShortcutSettingsWindow.swift
 ├── SpeechService.swift
 └── TranslationService.swift
 ```

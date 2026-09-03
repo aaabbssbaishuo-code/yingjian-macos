@@ -6,37 +6,29 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let loginItemService: LoginItemService
     private let onStartCapture: () -> Void
-    private let onPauseShortcut: () -> Void
-    private let onResumeShortcut: () throws -> Void
-    private let onUpdateShortcut: (HotKeyShortcut) throws -> Void
+    private let onOpenSettings: () -> Void
     private let onQuit: () -> Void
-    private var shortcut: HotKeyShortcut
-    private lazy var shortcutItem = NSMenuItem(
-        title: shortcutItemTitle,
-        action: #selector(showShortcutSettings),
-        keyEquivalent: ""
-    )
     private lazy var loginItem = NSMenuItem(
         title: "开机自动启动",
         action: #selector(toggleLoginItem),
         keyEquivalent: ""
     )
+    private lazy var shortcutItem = NSMenuItem(
+        title: "",
+        action: #selector(openSettings),
+        keyEquivalent: ""
+    )
 
     init(
         loginItemService: LoginItemService,
-        shortcut: HotKeyShortcut,
+        shortcut: KeyboardShortcut,
         onStartCapture: @escaping () -> Void,
-        onPauseShortcut: @escaping () -> Void,
-        onResumeShortcut: @escaping () throws -> Void,
-        onUpdateShortcut: @escaping (HotKeyShortcut) throws -> Void,
+        onOpenSettings: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.loginItemService = loginItemService
-        self.shortcut = shortcut
         self.onStartCapture = onStartCapture
-        self.onPauseShortcut = onPauseShortcut
-        self.onResumeShortcut = onResumeShortcut
-        self.onUpdateShortcut = onUpdateShortcut
+        self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
@@ -49,11 +41,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.toolTip = "英见"
         }
 
-        configureMenu()
+        configureMenu(shortcut: shortcut)
         statusItem.menu = menu
     }
 
-    private func configureMenu() {
+    private func configureMenu(shortcut: KeyboardShortcut) {
         let startItem = NSMenuItem(
             title: "开始截图翻译",
             action: #selector(startCapture),
@@ -66,6 +58,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         shortcutItem.target = self
         shortcutItem.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: nil)
         menu.addItem(shortcutItem)
+        updateShortcut(shortcut)
 
         menu.addItem(.separator())
 
@@ -98,39 +91,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         onStartCapture()
     }
 
-    @objc private func showShortcutSettings() {
-        onPauseShortcut()
-        let result = ShortcutRecorder.run(currentShortcut: shortcut)
-        let newShortcut: HotKeyShortcut
-
-        switch result {
-        case let .save(recordedShortcut):
-            newShortcut = recordedShortcut
-        case .restoreDefault:
-            newShortcut = .default
-        case .cancel:
-            try? onResumeShortcut()
-            return
-        }
-
-        do {
-            try onUpdateShortcut(newShortcut)
-            shortcut = newShortcut
-            shortcutItem.title = shortcutItemTitle
-            ToastPresenter.show(message: "快捷键已设为 \(newShortcut.displayName)")
-        } catch {
-            AlertPresenter.show(
-                title: "无法使用这个快捷键",
-                message: "这个组合键可能已被其他应用占用。原来的快捷键仍然有效，请换一个组合后重试。"
-            )
-        }
-    }
-
     @objc private func showPrivacy() {
         AlertPresenter.show(
             title: "隐私说明",
             message: "截图仅用于本次文字识别和翻译。应用不保存截图、OCR 原文或翻译结果，也不提供历史记录、账号或云同步。"
         )
+    }
+
+    @objc private func openSettings() {
+        onOpenSettings()
     }
 
     @objc private func toggleLoginItem() {
@@ -154,7 +123,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         loginItem.state = loginItemService.isEnabled ? .on : .off
     }
 
-    private var shortcutItemTitle: String {
-        "设置快捷键…（当前 \(shortcut.displayName)）"
+    func updateShortcut(_ shortcut: KeyboardShortcut) {
+        shortcutItem.title = "设置快捷键…   \(shortcut.displayString)"
+        shortcutItem.toolTip = "当前快捷键：\(shortcut.accessibilityDescription)"
     }
 }
